@@ -3,6 +3,7 @@ import Footer from '../components/Footer';
 import { AiOutlineDashboard, AiOutlineUser, AiOutlineTeam } from "react-icons/ai";
 import { GiArtificialIntelligence } from "react-icons/gi";
 import { MdAnalytics, MdOutlineSupportAgent } from "react-icons/md";
+import Link from 'next/link';
 
 export default function Home() {
   return (
@@ -28,18 +29,18 @@ export default function Home() {
               </p>
 
               <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start mt-6">
-                <a
+                <Link
                   href="/login"
                   className="inline-flex items-center px-6 py-3 rounded-md bg-white text-indigo-700 font-semibold shadow-lg hover:scale-105 transform transition"
                 >
                   Get Started
-                </a>
-                <a
+                </Link>
+                <Link
                   href="/#features"
                   className="inline-flex items-center px-6 py-3 rounded-md border border-white text-white hover:bg-white hover:text-indigo-700 transition"
                 >
                   Learn More
-                </a>
+                </Link>
               </div>
             </div>
 

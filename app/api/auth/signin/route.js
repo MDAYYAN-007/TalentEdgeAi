@@ -81,7 +81,8 @@ export async function POST(req) {
         id: user.id, 
         email: user.email, 
         role: user.role,
-        name: fullName
+        name: fullName,
+        isProfileComplete: user.isprofilecomplete || false,
       },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRY || "7d" }
