@@ -9,53 +9,65 @@ import Link from 'next/link';
 export default function ProfilePage() {
     const [user, setUser] = useState(null);
     const [profileData, setProfileData] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        if (token) {
-            const decoded = jwtDecode(token);
-            console.log('Decoded JWT:', decoded);
-            setUser(decoded);
+        const fetchProfile = async () => {
+            const token = localStorage.getItem('token');
+            if (!token) return;
 
-            if (decoded.isProfileComplete) {
-                console.log('User profile is complete:', decoded);
-                setProfileData({
-                    name: decoded.name,
-                    email: decoded.email,
-                    phone: '+1 (555) 123-4567',
-                    linkedinUrl: 'https://linkedin.com/in/johndoe',
-                    portfolioUrl: 'https://johndoe.dev',
-                    experiences: [
-                        {
-                            jobTitle: 'ML Engineer',
-                            company: 'TalentEdge',
-                            duration: 'Jan 2022 - Present',
-                            description: 'Building AI-powered recruitment solutions'
-                        }
-                    ],
-                    education: [
-                        {
-                            degree: 'B.Tech in AI & ML',
-                            institution: 'XYZ University',
-                            year: '2021',
-                            grade: '8.5 CGPA'
-                        }
-                    ],
-                    skills: ['Python', 'React', 'Node.js', 'Machine Learning', 'TensorFlow'],
-                    projects: [
-                        {
-                            title: 'AI Interview System',
-                            description: 'Built an AI-powered interview platform',
-                            githubUrl: 'https://github.com/user/project',
-                            liveUrl: 'https://project.com'
-                        }
-                    ]
+            try {
+                const decoded = jwtDecode(token);
+                console.log('Decoded JWT:', decoded);
+                setUser(decoded);
+
+                const res = await fetch(`/api/profile?userId=${decoded.id}`, {
+                    headers: { Authorization: `Bearer ${token}` },
                 });
+
+                const data = await res.json();
+
+                if (data.success && data.profile) {
+                    const profile = data.profile;
+                    console.log("Fetched Profile:", profile);
+
+                    // Parse and set profile data
+                    setProfileData({
+                        name: decoded.fullName || 'Unknown User',
+                        email: decoded.email,
+                        phone: profile.phone || '',
+                        linkedinUrl: profile.linkedin_url || '',
+                        portfolioUrl: profile.portfolio_url || '',
+                        resumeUrl: profile.resume_url || '',
+                        experiences: profile.experiences || [],
+                        education: profile.education || [],
+                        skills: profile.skills || [],
+                        projects: profile.projects || []
+                    });
+                } else {
+                    console.warn("No profile found for user.");
+                }
+            } catch (error) {
+                console.error("Error fetching profile:", error);
+            } finally {
+                setIsLoading(false);
             }
-        }
+        };
+
+        fetchProfile();
     }, []);
 
-    
+    if (isLoading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50">
+                <div className="text-center">
+                    <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-indigo-600 border-t-transparent"></div>
+                    <p className="mt-4 text-slate-600 font-medium">Loading...</p>
+                </div>
+            </div>
+        );
+    }
+
     if (!user) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50">
@@ -91,15 +103,15 @@ export default function ProfilePage() {
                                                 </span>
                                             </p>
                                         </div>
-                                        <button
-                                            onClick={() => setShowProfileForm(true)}
+                                        <Link
+                                            href={'profile/edit'}
                                             className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-semibold hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all flex items-center gap-2"
                                         >
                                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                             </svg>
                                             Edit Profile
-                                        </button>
+                                        </Link>
                                     </div>
 
                                     {/* Contact Info */}
@@ -136,45 +148,6 @@ export default function ProfilePage() {
                                 </div>
                             </div>
 
-                            {/* Experience Section */}
-                            <div className="bg-white/80 backdrop-blur-xl p-6 sm:p-8 rounded-3xl shadow-xl border border-white/20">
-                                <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2">
-                                    <span className="w-1 h-7 bg-gradient-to-b from-indigo-600 to-purple-600 rounded-full"></span>
-                                    Experience
-                                </h2>
-                                <div className="space-y-6">
-                                    {profileData.experiences.map((exp, index) => (
-                                        <div key={index} className="border-l-4 border-indigo-600 pl-6 py-2">
-                                            <h3 className="text-xl font-semibold text-slate-900">{exp.jobTitle}</h3>
-                                            <p className="text-indigo-600 font-medium mt-1">{exp.company}</p>
-                                            <p className="text-sm text-slate-500 mt-1">{exp.duration}</p>
-                                            <p className="text-slate-700 mt-3">{exp.description}</p>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Education Section */}
-                            <div className="bg-white/80 backdrop-blur-xl p-6 sm:p-8 rounded-3xl shadow-xl border border-white/20">
-                                <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2">
-                                    <span className="w-1 h-7 bg-gradient-to-b from-indigo-600 to-purple-600 rounded-full"></span>
-                                    Education
-                                </h2>
-                                <div className="space-y-6">
-                                    {profileData.education.map((edu, index) => (
-                                        <div key={index} className="border-l-4 border-purple-600 pl-6 py-2">
-                                            <h3 className="text-xl font-semibold text-slate-900">{edu.degree}</h3>
-                                            <p className="text-purple-600 font-medium mt-1">{edu.institution}</p>
-                                            <div className="flex gap-4 text-sm text-slate-500 mt-1">
-                                                <span>{edu.year}</span>
-                                                <span>•</span>
-                                                <span>{edu.grade}</span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
                             {/* Skills Section */}
                             <div className="bg-white/80 backdrop-blur-xl p-6 sm:p-8 rounded-3xl shadow-xl border border-white/20">
                                 <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2">
@@ -199,43 +172,95 @@ export default function ProfilePage() {
                                     <span className="w-1 h-7 bg-gradient-to-b from-indigo-600 to-purple-600 rounded-full"></span>
                                     Projects
                                 </h2>
-                                <div className="space-y-6">
-                                    {profileData.projects.map((project, index) => (
-                                        <div key={index} className="p-6 bg-slate-50 rounded-2xl border-2 border-slate-200">
-                                            <h3 className="text-xl font-semibold text-slate-900">{project.title}</h3>
-                                            <p className="text-slate-700 mt-2">{project.description}</p>
-                                            <div className="flex flex-wrap gap-3 mt-4">
-                                                {project.githubUrl && (
-                                                    <a
-                                                        href={project.githubUrl}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors text-sm font-medium"
-                                                    >
-                                                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                                                            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
-                                                        </svg>
-                                                        GitHub
-                                                    </a>
-                                                )}
-                                                {project.liveUrl && (
-                                                    <a
-                                                        href={project.liveUrl}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
-                                                    >
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                                        </svg>
-                                                        Live Demo
-                                                    </a>
-                                                )}
+                                {profileData.projects.length === 0 ? (
+                                    <p className="text-slate-600">No projects added yet.</p>
+                                ) : (
+                                    <div className="space-y-6">
+                                        {profileData.projects.map((project, index) => (
+                                            <div key={index} className="p-6 bg-slate-50 rounded-2xl border-2 border-slate-200">
+                                                <h3 className="text-xl font-semibold text-slate-900">{project.title}</h3>
+                                                <p className="text-slate-700 mt-2">{project.description}</p>
+                                                <div className="flex flex-wrap gap-3 mt-4">
+                                                    {project.githubUrl && (
+                                                        <a
+                                                            href={project.githubUrl}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors text-sm font-medium"
+                                                        >
+                                                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                                                <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+                                                            </svg>
+                                                            GitHub
+                                                        </a>
+                                                    )}
+                                                    {project.liveUrl && (
+                                                        <a
+                                                            href={project.liveUrl}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
+                                                        >
+                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                                            </svg>
+                                                            Live Demo
+                                                        </a>
+                                                    )}
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
-                                </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
+
+                            {/* Experience Section */}
+                            <div className="bg-white/80 backdrop-blur-xl p-6 sm:p-8 rounded-3xl shadow-xl border border-white/20">
+                                <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+                                    <span className="w-1 h-7 bg-gradient-to-b from-indigo-600 to-purple-600 rounded-full"></span>
+                                    Experience
+                                </h2>
+                                {profileData.experiences.length === 0 ? (
+                                    <p className="text-slate-600">No experiences added yet.</p>
+                                ) : (
+                                    <div className="space-y-6">
+                                        {profileData.experiences.map((exp, index) => (
+                                            <div key={index} className="border-l-4 border-indigo-600 pl-6 py-2">
+                                                <h3 className="text-xl font-semibold text-slate-900">{exp.jobTitle}</h3>
+                                                <p className="text-indigo-600 font-medium mt-1">{exp.company}</p>
+                                                <p className="text-sm text-slate-500 mt-1">{exp.duration}</p>
+                                                <p className="text-slate-700 mt-3">{exp.description}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Education Section */}
+                            <div className="bg-white/80 backdrop-blur-xl p-6 sm:p-8 rounded-3xl shadow-xl border border-white/20">
+                                <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+                                    <span className="w-1 h-7 bg-gradient-to-b from-indigo-600 to-purple-600 rounded-full"></span>
+                                    Education
+                                </h2>
+                                {profileData.education.length === 0 ? (
+                                    <p className="text-slate-600">No education added yet.</p>
+                                ) : (
+                                    <div className="space-y-6">
+                                        {profileData.education.map((edu, index) => (
+                                            <div key={index} className="border-l-4 border-purple-600 pl-6 py-2">
+                                                <h3 className="text-xl font-semibold text-slate-900">{edu.degree}</h3>
+                                                <p className="text-purple-600 font-medium mt-1">{edu.institution}</p>
+                                                <div className="flex gap-4 text-sm text-slate-500 mt-1">
+                                                    <span>{edu.year}</span>
+                                                    <span>•</span>
+                                                    <span>{edu.grade}</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
                         </div>
                     ) : (
                         /* Profile Not Completed */

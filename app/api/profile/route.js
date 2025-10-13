@@ -8,6 +8,8 @@ export async function POST(req) {
         const {
             userId,
             fullName,
+            email,
+            role,
             phone,
             linkedinUrl,
             portfolioUrl,
@@ -68,13 +70,12 @@ export async function POST(req) {
                 fullName,
                 isProfileComplete: true,
             },
-            SECRET,
+            process.env.JWT_SECRET,
             { expiresIn: process.env.JWT_EXPIRY || "7d" }
         );
 
         const response = NextResponse.json({
             success: true,
-            profile,
             token: newToken,
         });
 
@@ -82,6 +83,60 @@ export async function POST(req) {
     } catch (error) {
         console.error("Profile save error:", error);
 
+        return NextResponse.json(
+            { success: false, message: "An unexpected error occurred" },
+            { status: 500 }
+        );
+    }
+}
+
+export async function GET(req) {
+    try {
+        const { searchParams } = new URL(req.url);
+        const userId = searchParams.get("userId");
+
+        console.log("Fetching profile for userId:", userId);
+
+        if (!userId) {
+            return NextResponse.json(
+                { success: false, message: "userId query param is required" },
+                { status: 400 }
+            );
+        }
+
+        const sql = "SELECT * FROM profiles WHERE user_id = $1";
+        const result = await query(sql, [userId]);
+
+        if (!result.rows.length) {
+            return NextResponse.json({
+                success: true,
+                profile: null,
+                message: "Profile not found",
+            });
+        }
+
+        // Parse JSON fields before returning
+        const profile = result.rows[0];
+        console.log("Profile data retrieved:", profile);
+        if (profile.experiences.length > 0) {
+            profile.experiences = JSON.parse(profile.experiences || "[]");
+        }
+        if (profile.education.length > 0) {
+            profile.education = JSON.parse(profile.education || "[]");
+        }
+        if (profile.skills.length > 0) {
+            profile.skills = profile.skills || "[]";
+        }
+        if (profile.projects.length > 0) {
+            profile.projects = JSON.parse(profile.projects || "[]");
+        }
+
+        return NextResponse.json({
+            success: true,
+            profile,
+        });
+    } catch (error) {
+        console.error("Error fetching profile:", error);
         return NextResponse.json(
             { success: false, message: "An unexpected error occurred" },
             { status: 500 }

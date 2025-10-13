@@ -34,41 +34,51 @@ export default function ProfileEditPages() {
     const [formData, setFormData] = useState(initialFormData);
 
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        if (token) {
+        const fetchProfile = async () => {
+            const token = localStorage.getItem("token");
+            if (!token) return;
+
             try {
-                
                 const decoded = jwtDecode(token);
                 setUser(decoded);
                 console.log("Decoded JWT:", decoded);
+
+                // Set email & fullName initially
                 setFormData(prev => ({
                     ...prev,
-                    fullName: decoded.name || prev.fullName,
+                    fullName: decoded.fullName || prev.fullName,
                     email: decoded.email || prev.email,
                 }));
 
-                if (decoded.isProfileComplete) {
+                // Fetch profile from backend
+                const res = await fetch(`/api/profile?userId=${decoded.id}`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+
+                const data = await res.json();
+                if (data.success && data.profile) {
+                    const profile = data.profile;
+
                     setFormData(prev => ({
                         ...prev,
-                        phone: '+1 (555) 123-4567',
-                        linkedinUrl: 'https://linkedin.com/in/johndoe',
-                        portfolioUrl: 'https://johndoe.dev',
-                        experiences: [
-                            { jobTitle: 'ML Engineer', company: 'TalentEdge', duration: 'Jan 2022 - Present', description: 'Building AI-powered recruitment solutions' }
-                        ],
-                        education: [
-                            { degree: 'B.Tech in AI & ML', institution: 'XYZ University', year: '2021', grade: '8.5 CGPA' }
-                        ],
-                        skills: ['Python', 'React', 'Node.js', 'Machine Learning', 'TensorFlow'],
-                        projects: [
-                            { title: 'AI Interview System', description: 'Built an AI-powered interview platform', githubUrl: 'https://github.com/user/project', liveUrl: 'https://project.com' }
-                        ]
+                        phone: profile.phone || "",
+                        linkedinUrl: profile.linkedin_url || "",
+                        portfolioUrl: profile.portfolio_url || "",
+                        resumeUrl: profile.resume_url || "",
+                        experiences: profile.experiences || [],
+                        education: profile.education || [],
+                        skills: profile.skills || [],
+                        projects: profile.projects || [],
                     }));
+                } else {
+                    console.warn("No existing profile found for user");
                 }
             } catch (error) {
-                console.error("Error decoding token:", error);
+                console.error("Error loading profile:", error);
             }
-        }
+        };
+
+        fetchProfile();
     }, []);
 
     const handleInputChange = useCallback((e) => {
@@ -115,36 +125,35 @@ export default function ProfileEditPages() {
         }));
     };
 
-    // Resume Upload
     const handleResumeUpload = async (e) => {
         const file = e.target.files[0];
-        if (!file) return;
+        if (!file) return toast.error("No file selected.");
 
-
-        setResumeFile(file);
         setIsUploading(true);
-        // const formDataUpload = new FormData();
-        // formDataUpload.append('resume', file);
 
         try {
-            // Mock API call to parse resume
-            const data = {
-                success: true,
-                parsedData: {
-                    phone: '+1 (800) 555-0199',
-                    linkedinUrl: 'https://linkedin.com/in/newuserprofile',
-                }
-            };
+            const formData2 = new FormData();
+            formData2.append("file", file, file.name);
+
+            const res = await fetch("/api/parse-resume", {
+                method: "POST",
+                body: formData2,
+            });
+
+            const data = await res.json();
+            console.log("Resume Parse Response:", data);
 
             if (data.success) {
-                setFormData(prev => ({ ...prev, ...data.parsedData }));
-                setActiveTab('basic');
+                setFormData((prev) => ({ ...prev, ...data.parsedData }));
+                setActiveTab("basic");
+                toast.success("Resume parsed successfully!");
             } else {
-                alert('Resume parsing failed. Please fill out the form manually.');
+                toast.error(data.message || "Resume parsing failed. Please fill manually.");
+                console.log("Rawwww:", data.raw);
             }
         } catch (error) {
-            console.error('Resume upload error:', error);
-            alert('An error occurred during upload.');
+            console.error(error);
+            toast.error("Error uploading resume.");
         } finally {
             setIsUploading(false);
         }
@@ -221,6 +230,7 @@ export default function ProfileEditPages() {
             userId: user?.id,
             email: formData.email,
             fullName: formData.fullName,
+            role: user?.role || 'user',
             phone: formData.phone,
             linkedinUrl: formData.linkedinUrl,
             portfolioUrl: formData.portfolioUrl,
