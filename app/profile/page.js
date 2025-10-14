@@ -14,7 +14,10 @@ export default function ProfilePage() {
     useEffect(() => {
         const fetchProfile = async () => {
             const token = localStorage.getItem('token');
-            if (!token) return;
+            if (!token) {
+                setIsLoading(false);
+                return;
+            }
 
             try {
                 const decoded = jwtDecode(token);
@@ -25,6 +28,7 @@ export default function ProfilePage() {
                     headers: { Authorization: `Bearer ${token}` },
                 });
 
+                console.log('Profile fetch response status:', res);
                 const data = await res.json();
 
                 if (data.success && data.profile) {
@@ -59,23 +63,81 @@ export default function ProfilePage() {
 
     if (isLoading) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50">
-                <div className="text-center">
-                    <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-indigo-600 border-t-transparent"></div>
-                    <p className="mt-4 text-slate-600 font-medium">Loading...</p>
+            <>
+                <Navbar />
+                <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50 p-4">
+                    <div className="text-center bg-white/70 backdrop-blur-sm p-8 rounded-2xl shadow-xl border border-white/20">
+
+                        {/* Simplified, High-Contrast Spinner */}
+                        <div className="inline-block relative">
+                            {/* Outer Spinner (The main motion) */}
+                            <div className="inline-block animate-spin rounded-full h-16 w-16 border-4 border-indigo-500 border-t-indigo-800"></div>
+
+                            {/* Inner Dot (A subtle pulse for visual weight) */}
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <div className="w-4 h-4 bg-indigo-600 rounded-full animate-pulse"></div>
+                            </div>
+                        </div>
+
+                        <p className="mt-6 text-slate-800 font-bold text-xl">Loading your profile...</p>
+                        <p className="mt-1 text-slate-600 text-sm">Fetching personalized data. Hang tight!</p>
+                    </div>
                 </div>
-            </div>
+                <Footer />
+            </>
         );
     }
 
     if (!user) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50">
-                <div className="text-center">
-                    <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-indigo-600 border-t-transparent"></div>
-                    <p className="mt-4 text-slate-600 font-medium">Loading...</p>
+            <>
+                <Navbar />
+                <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50 p-4">
+                    <div className="max-w-md w-full">
+                        <div className="relative">
+                            {/* Subtle background blur effect */}
+                            <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl blur-2xl opacity-20"></div>
+
+                            <div className="relative bg-white/80 backdrop-blur-xl p-8 sm:p-10 rounded-3xl shadow-2xl border border-white/20 text-center space-y-6">
+
+                                {/* Updated Icon: Key or Lock for Authentication */}
+                                <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-red-500 to-pink-700 shadow-lg">
+                                    {/* Using a standard 'Key' icon to signify access required */}
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2v5a2 2 0 01-2 2h-2m2-4h-2m0 0a1 1 0 00-1-1v-2a1 1 0 00-1 1v2a1 1 0 00-1 1h2a2 2 0 002-2V9a2 2 0 00-2-2m-2 4h4" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 14v-2m-6 4v-4m0 0H6a2 2 0 00-2 2v5a2 2 0 002 2h2m-2-4v4m4-4v4m0-4h4m-4 4h4" />
+                                    </svg>
+                                </div>
+
+                                <div>
+                                    <h1 className="text-3xl font-bold text-slate-900 mb-2">
+                                        Access Denied
+                                    </h1>
+                                    <p className="text-slate-600">
+                                        You need to be **signed in** to view your profile and personal data.
+                                    </p>
+                                </div>
+
+                                <div className="pt-2 space-y-3">
+                                    <a
+                                        href="/signin"
+                                        className="block w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all"
+                                    >
+                                        Login to Continue 🔒
+                                    </a>
+                                    <p className="text-sm text-slate-500">
+                                        Don't have an account?{' '}
+                                        <a href="/signup" className="text-indigo-600 font-semibold hover:text-indigo-700 underline underline-offset-2">
+                                            Create an account
+                                        </a>
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
+                <Footer />
+            </>
         );
     }
 
@@ -88,126 +150,127 @@ export default function ProfilePage() {
                         /* Profile Already Completed */
                         <div className="space-y-6">
                             {/* Profile Header */}
-                            <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-xl border border-white/20 overflow-hidden">
-                                <div className="h-32 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600"></div>
-                                <div className="px-6 sm:px-8 pb-8">
-                                    <div className="flex flex-col sm:flex-row items-start sm:items-end gap-6 -mt-16">
-                                        <div className="w-32 h-32 rounded-2xl bg-white shadow-xl flex items-center justify-center text-5xl font-bold text-indigo-600 border-4 border-white">
-                                            {profileData.name.charAt(0)}
-                                        </div>
-                                        <div className="flex-1">
-                                            <h1 className="text-3xl sm:text-4xl font-bold text-slate-900">{profileData.name}</h1>
-                                            <p className="text-slate-600 mt-1 flex items-center gap-2">
-                                                <span className="inline-flex items-center px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 text-sm font-semibold">
-                                                    {user.role}
-                                                </span>
-                                            </p>
-                                        </div>
-                                        <Link
-                                            href={'profile/edit'}
-                                            className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-semibold hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all flex items-center gap-2"
-                                        >
-                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                            </svg>
-                                            Edit Profile
-                                        </Link>
+                            <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-xl border border-white/20 p-6 sm:p-8">
+                                <div className="flex flex-col sm:flex-row items-start gap-6">
+                                    <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 shadow-xl flex items-center justify-center text-5xl font-bold text-white">
+                                        {profileData.name.charAt(0)}
                                     </div>
+                                    <div className="flex-1 min-w-0">
+                                        <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-2">{profileData.name}</h1>
+                                        <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-sm font-semibold shadow-md mb-4">
+                                            {user.role}
+                                        </span>
 
-                                    {/* Contact Info */}
-                                    <div className="mt-6 flex flex-wrap gap-4 text-sm text-slate-600">
-                                        <a href={`mailto:${profileData.email}`} className="flex items-center gap-2 hover:text-indigo-600 transition-colors">
-                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                            </svg>
-                                            {profileData.email}
-                                        </a>
-                                        <a href={`tel:${profileData.phone}`} className="flex items-center gap-2 hover:text-indigo-600 transition-colors">
-                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                                            </svg>
-                                            {profileData.phone}
-                                        </a>
-                                        {profileData.linkedinUrl && (
-                                            <a href={profileData.linkedinUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-indigo-600 transition-colors">
-                                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                                                    <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" />
-                                                </svg>
-                                                LinkedIn
-                                            </a>
-                                        )}
-                                        {profileData.portfolioUrl && (
-                                            <a href={profileData.portfolioUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-indigo-600 transition-colors">
+                                        {/* Contact Info */}
+                                        <div className="mt-4 flex flex-wrap gap-4 text-sm text-slate-600">
+                                            <a href={`mailto:${profileData.email}`} className="flex items-center gap-2 hover:text-indigo-600 transition-colors">
                                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                                                 </svg>
-                                                Portfolio
+                                                {profileData.email}
                                             </a>
-                                        )}
+                                            {profileData.phone && (
+                                                <a href={`tel:${profileData.phone}`} className="flex items-center gap-2 hover:text-indigo-600 transition-colors">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                                                    </svg>
+                                                    {profileData.phone}
+                                                </a>
+                                            )}
+                                            {profileData.linkedinUrl && (
+                                                <a href={profileData.linkedinUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-indigo-600 transition-colors">
+                                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                                        <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" />
+                                                    </svg>
+                                                    LinkedIn
+                                                </a>
+                                            )}
+                                            {profileData.portfolioUrl && (
+                                                <a href={profileData.portfolioUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-indigo-600 transition-colors">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                                                    </svg>
+                                                    Portfolio
+                                                </a>
+                                            )}
+                                        </div>
                                     </div>
+                                    <a
+                                        href={'profile/edit'}
+                                        className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-semibold hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all flex items-center gap-2 self-start"
+                                    >
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                        </svg>
+                                        Edit Profile
+                                    </a>
                                 </div>
                             </div>
 
                             {/* Skills Section */}
-                            <div className="bg-white/80 backdrop-blur-xl p-6 sm:p-8 rounded-3xl shadow-xl border border-white/20">
-                                <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2">
-                                    <span className="w-1 h-7 bg-gradient-to-b from-indigo-600 to-purple-600 rounded-full"></span>
-                                    Skills
-                                </h2>
-                                <div className="flex flex-wrap gap-3">
-                                    {profileData.skills.map((skill, index) => (
-                                        <span
-                                            key={index}
-                                            className="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg font-medium"
-                                        >
-                                            {skill}
-                                        </span>
-                                    ))}
+                            {profileData.skills.length > 0 && (
+                                <div className="bg-white/80 backdrop-blur-xl p-6 sm:p-8 rounded-3xl shadow-xl border border-white/20">
+                                    <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+                                        <span className="w-1.5 h-8 bg-gradient-to-b from-indigo-600 to-purple-600 rounded-full"></span>
+                                        Skills
+                                    </h2>
+                                    <div className="flex flex-wrap gap-3">
+                                        {profileData.skills.map((skill, index) => (
+                                            <span
+                                                key={index}
+                                                className="px-4 py-2 bg-gradient-to-br from-indigo-50 to-purple-50 text-indigo-700 rounded-xl font-medium border border-indigo-100 hover:shadow-md transition-shadow"
+                                            >
+                                                {skill}
+                                            </span>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
+                            )}
 
                             {/* Projects Section */}
                             <div className="bg-white/80 backdrop-blur-xl p-6 sm:p-8 rounded-3xl shadow-xl border border-white/20">
-                                <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2">
-                                    <span className="w-1 h-7 bg-gradient-to-b from-indigo-600 to-purple-600 rounded-full"></span>
+                                <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+                                    <span className="w-1.5 h-8 bg-gradient-to-b from-indigo-600 to-purple-600 rounded-full"></span>
                                     Projects
                                 </h2>
                                 {profileData.projects.length === 0 ? (
-                                    <p className="text-slate-600">No projects added yet.</p>
+                                    <p className="text-slate-500 italic">No projects added yet.</p>
                                 ) : (
-                                    <div className="space-y-6">
+                                    <div className="space-y-5">
                                         {profileData.projects.map((project, index) => (
-                                            <div key={index} className="p-6 bg-slate-50 rounded-2xl border-2 border-slate-200">
+                                            <div key={index} className="p-6 bg-gradient-to-br from-slate-50 to-indigo-50/30 rounded-2xl border border-slate-200 hover:shadow-lg transition-shadow">
                                                 <h3 className="text-xl font-semibold text-slate-900">{project.title}</h3>
-                                                <p className="text-slate-700 mt-2">{project.description}</p>
-                                                <div className="flex flex-wrap gap-3 mt-4">
-                                                    {project.githubUrl && (
-                                                        <a
-                                                            href={project.githubUrl}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors text-sm font-medium"
-                                                        >
-                                                            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                                                                <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
-                                                            </svg>
-                                                            GitHub
-                                                        </a>
-                                                    )}
-                                                    {project.liveUrl && (
-                                                        <a
-                                                            href={project.liveUrl}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
-                                                        >
-                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                                            </svg>
-                                                            Live Demo
-                                                        </a>
-                                                    )}
-                                                </div>
+                                                <p className="text-slate-700 mt-2 leading-relaxed">{project.description}</p>
+                                                {(project.githubUrl || project.liveUrl) && (
+                                                    <div className="flex flex-wrap gap-3 mt-4">
+                                                        {project.githubUrl && (
+                                                            <a
+                                                                href={project.githubUrl}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors text-sm font-medium"
+                                                            >
+                                                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                                                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+                                                                </svg>
+                                                                GitHub
+                                                            </a>
+                                                        )}
+                                                        {project.liveUrl && (
+                                                            <a
+                                                                href={project.liveUrl}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
+                                                            >
+                                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                                                </svg>
+                                                                Live Demo
+                                                            </a>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
@@ -216,20 +279,20 @@ export default function ProfilePage() {
 
                             {/* Experience Section */}
                             <div className="bg-white/80 backdrop-blur-xl p-6 sm:p-8 rounded-3xl shadow-xl border border-white/20">
-                                <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2">
-                                    <span className="w-1 h-7 bg-gradient-to-b from-indigo-600 to-purple-600 rounded-full"></span>
+                                <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+                                    <span className="w-1.5 h-8 bg-gradient-to-b from-indigo-600 to-purple-600 rounded-full"></span>
                                     Experience
                                 </h2>
                                 {profileData.experiences.length === 0 ? (
-                                    <p className="text-slate-600">No experiences added yet.</p>
+                                    <p className="text-slate-500 italic">No experiences added yet.</p>
                                 ) : (
                                     <div className="space-y-6">
                                         {profileData.experiences.map((exp, index) => (
-                                            <div key={index} className="border-l-4 border-indigo-600 pl-6 py-2">
+                                            <div key={index} className="border-l-4 border-indigo-600 pl-6 py-2 hover:border-indigo-700 transition-colors">
                                                 <h3 className="text-xl font-semibold text-slate-900">{exp.jobTitle}</h3>
                                                 <p className="text-indigo-600 font-medium mt-1">{exp.company}</p>
                                                 <p className="text-sm text-slate-500 mt-1">{exp.duration}</p>
-                                                <p className="text-slate-700 mt-3">{exp.description}</p>
+                                                <p className="text-slate-700 mt-3 leading-relaxed">{exp.description}</p>
                                             </div>
                                         ))}
                                     </div>
@@ -238,23 +301,25 @@ export default function ProfilePage() {
 
                             {/* Education Section */}
                             <div className="bg-white/80 backdrop-blur-xl p-6 sm:p-8 rounded-3xl shadow-xl border border-white/20">
-                                <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-2">
-                                    <span className="w-1 h-7 bg-gradient-to-b from-indigo-600 to-purple-600 rounded-full"></span>
+                                <h2 className="text-2xl font-bold text-slate-900 mb-6 flex items-center gap-3">
+                                    <span className="w-1.5 h-8 bg-gradient-to-b from-indigo-600 to-purple-600 rounded-full"></span>
                                     Education
                                 </h2>
                                 {profileData.education.length === 0 ? (
-                                    <p className="text-slate-600">No education added yet.</p>
+                                    <p className="text-slate-500 italic">No education added yet.</p>
                                 ) : (
                                     <div className="space-y-6">
                                         {profileData.education.map((edu, index) => (
-                                            <div key={index} className="border-l-4 border-purple-600 pl-6 py-2">
+                                            <div key={index} className="border-l-4 border-purple-600 pl-6 py-2 hover:border-purple-700 transition-colors">
                                                 <h3 className="text-xl font-semibold text-slate-900">{edu.degree}</h3>
                                                 <p className="text-purple-600 font-medium mt-1">{edu.institution}</p>
-                                                <div className="flex gap-4 text-sm text-slate-500 mt-1">
-                                                    <span>{edu.year}</span>
-                                                    <span>•</span>
-                                                    <span>{edu.grade}</span>
-                                                </div>
+                                                {(edu.year || edu.grade) && (
+                                                    <div className="flex gap-4 text-sm text-slate-500 mt-1">
+                                                        {edu.year && <span>{edu.year}</span>}
+                                                        {edu.year && edu.grade && <span>•</span>}
+                                                        {edu.grade && <span>{edu.grade}</span>}
+                                                    </div>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
@@ -297,12 +362,14 @@ export default function ProfilePage() {
 
                                     <Link
                                         href="/profile/edit"
-                                        className="px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-center rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg shadow-indigo-500/50 hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 flex items-center justify-center gap-2 mx-auto"
+                                        className="inline-block px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-center rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg shadow-indigo-500/50 hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200"
                                     >
-                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                        </svg>
-                                        Complete Profile Now
+                                        <span className="flex items-center justify-center gap-2">
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                            </svg>
+                                            Complete Profile Now
+                                        </span>
                                     </Link>
                                 </div>
                             </div>

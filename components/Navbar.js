@@ -21,7 +21,7 @@ export default function Navbar() {
           // NOTE: 'jwt-decode' is a named import for CJS compatibility
           const decoded = jwtDecode(token);
           setUser({
-            name: decoded.name || decoded.firstName || 'User',
+            name: decoded.name || decoded.fullName || 'User',
             role: decoded.role || 'user',
           });
         } catch (err) {
@@ -40,7 +40,7 @@ export default function Navbar() {
     setUser(null);
     // Close mobile menu if it was open
     setOpen(false);
-    router.push('/login');
+    router.push('/signin');
   };
 
   const Logo = () => (

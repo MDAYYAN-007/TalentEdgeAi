@@ -34,8 +34,8 @@ export async function POST(req) {
 
     if (!userRes.rows.length) {
       return NextResponse.json(
-        { 
-          success: false, 
+        {
+          success: false,
           message: "No account found with this email address",
           errorType: "user_not_found"
         },
@@ -48,8 +48,8 @@ export async function POST(req) {
     // 2️⃣ Check if email is verified
     if (!user.verified) {
       return NextResponse.json(
-        { 
-          success: false, 
+        {
+          success: false,
           message: "Please verify your email before signing in",
           errorType: "email_not_verified",
           email: user.email
@@ -63,8 +63,8 @@ export async function POST(req) {
 
     if (!isMatch) {
       return NextResponse.json(
-        { 
-          success: false, 
+        {
+          success: false,
           message: "Incorrect password. Please try again",
           errorType: "invalid_password"
         },
@@ -75,14 +75,23 @@ export async function POST(req) {
     // 4️⃣ Build full name
     const fullName = `${user.first_name || ""} ${user.last_name || ""}`.trim();
 
+    const res = await query(
+      `SELECT company_name FROM organizations WHERE id=$1`,
+      [user.org_id]
+    );
+
+    console.log('User organization fetch result:', res);
+
     // 5️⃣ Create JWT token including full name
     const token = jwt.sign(
-      { 
-        id: user.id, 
-        email: user.email, 
+      {
+        id: user.id,
+        email: user.email,
         role: user.role,
         name: fullName,
+        orgName: res?.rows[0]?.company_name || null,
         isProfileComplete: user.isprofilecomplete || false,
+        orgId: user.org_id || null
       },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRY || "7d" }

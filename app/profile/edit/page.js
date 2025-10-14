@@ -129,31 +129,68 @@ export default function ProfileEditPages() {
         const file = e.target.files[0];
         if (!file) return toast.error("No file selected.");
 
+        setResumeFile(file);
         setIsUploading(true);
 
         try {
-            const formData2 = new FormData();
-            formData2.append("file", file, file.name);
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("workspace", "VDmSwfMR"); // Your Affinda workspace ID
 
-            const res = await fetch("/api/parse-resume", {
+            const res = await fetch("/api/resume-parser", {
                 method: "POST",
-                body: formData2,
+                body: formData,
             });
 
             const data = await res.json();
             console.log("Resume Parse Response:", data);
 
             if (data.success) {
-                setFormData((prev) => ({ ...prev, ...data.parsedData }));
+
+                const parsed = data.parsedData;
+
+                console.log("Parsed Data:", parsed);
+
+                console.log("Raw Affinda Response:", data.raw);
+
+                // Auto-fill your form fields from Affinda's parsed data
+                setFormData(prev => ({
+                    ...prev,
+                    name: parsed.name || prev.name,
+                    email: parsed.email || prev.email,
+                    phone: parsed.phone || prev.phone,
+                    linkedinUrl: parsed.linkedinUrl || prev.linkedinUrl,
+                    portfolioUrl: parsed.portfolioUrl || prev.portfolioUrl,
+                    skills: parsed.skills || prev.skills,
+                    education: (parsed.education || []).map(edu => ({
+                        degree: edu.degree || '',
+                        institution: edu.institution || '',
+                        year: edu.year || '',
+                        grade: edu.grade || '',
+                    })) || prev.education,
+                    experiences: (parsed.experience || []).map(exp => ({
+                        jobTitle: exp.jobTitle || '',
+                        company: exp.company || '',
+                        duration: exp.duration || '',
+                        description: exp.description || '',
+                    })) || prev.experiences,
+                    projects: (parsed.projects || []).map(p => ({
+                        title: p.title || '',
+                        description: p.description || '',
+                        githubUrl: p.githubUrl || '',
+                        liveUrl: p.liveUrl || '',
+                    })) || prev.projects,
+                }));
+
                 setActiveTab("basic");
                 toast.success("Resume parsed successfully!");
             } else {
-                toast.error(data.message || "Resume parsing failed. Please fill manually.");
-                console.log("Rawwww:", data.raw);
+                console.log("Raw Affinda Response:", data.raw);
+                toast.error(data.message || "Failed to parse resume. Fill manually.");
             }
-        } catch (error) {
-            console.error(error);
-            toast.error("Error uploading resume.");
+        } catch (err) {
+            console.error("Resume parsing error:", err);
+            toast.error("Error uploading resume");
         } finally {
             setIsUploading(false);
         }
@@ -342,7 +379,7 @@ export default function ProfileEditPages() {
                                                 />
                                                 <label
                                                     htmlFor="resume-upload"
-                                                    className={`inline-flex items-center gap-2 px-8 py-4 bg-indigo-600 text-white rounded-xl font-bold transition-all cursor-pointer ${isUploading ? 'opacity-70 cursor-wait' : 'hover:bg-indigo-700 shadow-lg shadow-indigo-500/50 hover:shadow-xl hover:-translate-y-0.5'}`}
+                                                    className={`inline-flex items-center gap-2 px-8 py-4 bg-indigo-600 text-white rounded-xl font-bold transition-all cursor-pointer ${isUploading ? 'opacity-70 cursor-wait' : 'hover:bg-indigo-700 shadow-lg hover:shadow-xl'}`}
                                                 >
                                                     {isUploading ? (
                                                         <>
@@ -351,13 +388,12 @@ export default function ProfileEditPages() {
                                                         </>
                                                     ) : (
                                                         <>
-                                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                                                            </svg>
+                                                            <UploadCloud className="w-5 h-5" />
                                                             Select File to Upload
                                                         </>
                                                     )}
                                                 </label>
+
                                                 {resumeFile && (
                                                     <p className="mt-4 text-sm font-medium text-slate-900">
                                                         File selected: <span className="text-green-700 font-semibold">{resumeFile.name}</span>
@@ -613,7 +649,7 @@ export default function ProfileEditPages() {
                                                         </div>
                                                         {/* Description */}
                                                         <div>
-                                                            <label className="block text-sm font-semibold text-slate-700 mb-2">Description</label>
+                                                            <label className="block text-sm font-semibold text-slate-700 mb-2">Description *</label>
                                                             <textarea value={project.description} onChange={(e) => updateNestedArray('projects', index, 'description', e.target.value)} rows={3} placeholder="Brief description of the project..." className="w-full border-2 border-slate-200 rounded-xl px-4 py-2.5 text-slate-900 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all resize-none" />
                                                         </div>
                                                         {/* URLs */}

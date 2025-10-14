@@ -25,26 +25,26 @@ export default function Home() {
                 Automation
               </h1>
               <p className="text-lg text-indigo-100 max-w-xl">
-                Streamline recruiting, performance tracking, payroll, and attendance — all in one smart HRMS platform.
+                Streamline recruiting, performance tracking, payroll, and attendance — **built for multiple organizations.**
               </p>
 
               <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start mt-6">
                 <Link
-                  href="/login"
+                  href="/create-organization" // New route for Organization Creation
                   className="inline-flex items-center px-6 py-3 rounded-md bg-white text-indigo-700 font-semibold shadow-lg hover:scale-105 transform transition"
                 >
-                  Get Started
+                  🏢 CREATE ORGANIZATION
                 </Link>
                 <Link
-                  href="/#features"
+                  href="/login" // Existing Login route (now for Employees/Candidates)
                   className="inline-flex items-center px-6 py-3 rounded-md border border-white text-white hover:bg-white hover:text-indigo-700 transition"
                 >
-                  Learn More
+                  👤 SIGN IN AS A USER
                 </Link>
               </div>
             </div>
 
-            {/* Stats Cards */}
+            {/* Stats Cards - Keeping the structure the same */}
             <div className="lg:w-1/2">
               <div className="rounded-3xl p-6 bg-white shadow-2xl ring-1 ring-slate-200">
                 <div className="text-center text-slate-800 font-medium mb-6">Live Dashboard Preview</div>
@@ -72,6 +72,7 @@ export default function Home() {
           </div>
         </section>
         {/* Features Section */}
+        {/* ... (rest of the page content remains unchanged) */}
         <section
           id="features"
           className="max-w-7xl mx-auto px-6 lg:px-8 py-24 bg-gradient-to-b from-indigo-50 via-white to-indigo-100 border-t border-slate-200"
@@ -174,10 +175,10 @@ export default function Home() {
             Start your AI-powered HR journey and hire smarter, faster, and easier.
           </p>
           <a
-            href="/login"
+            href="/org/signup"
             className="mt-8 inline-block px-8 py-4 bg-white text-indigo-600 font-semibold rounded-lg shadow-lg hover:scale-105 transform transition"
           >
-            Get Started
+            Create Organization
           </a>
         </section>
       </main>

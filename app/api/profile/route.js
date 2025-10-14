@@ -118,18 +118,16 @@ export async function GET(req) {
         // Parse JSON fields before returning
         const profile = result.rows[0];
         console.log("Profile data retrieved:", profile);
-        if (profile.experiences.length > 0) {
-            profile.experiences = JSON.parse(profile.experiences || "[]");
-        }
-        if (profile.education.length > 0) {
-            profile.education = JSON.parse(profile.education || "[]");
-        }
-        if (profile.skills.length > 0) {
-            profile.skills = profile.skills || "[]";
-        }
-        if (profile.projects.length > 0) {
-            profile.projects = JSON.parse(profile.projects || "[]");
-        }
+    
+        profile.experiences = profile.experiences || [];
+        profile.education = profile.education || [];
+        profile.skills = profile.skills || [];
+        profile.projects = profile.projects || [];
+        
+        profile.experiences = Array.isArray(profile.experiences) ? profile.experiences : [];
+        profile.education = Array.isArray(profile.education) ? profile.education : [];
+        profile.skills = Array.isArray(profile.skills) ? profile.skills : [];
+        profile.projects = Array.isArray(profile.projects) ? profile.projects : [];
 
         return NextResponse.json({
             success: true,
