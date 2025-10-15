@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+'use server';
+
 import crypto from "crypto";
 import { query } from "@/actions/db";
 import nodemailer from "nodemailer";
@@ -6,21 +7,21 @@ import nodemailer from "nodemailer";
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT),
-  secure: process.env.SMTP_PORT == 465,
+  secure: process.env.SMTP_PORT == "465",
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
 });
 
-export async function POST(req) {
+export async function resendOTP(formData) {
   try {
-    const { email } = await req.json();
+    const { email } = formData;
 
     // Check if email exists in otp_temp
     const record = await query("SELECT * FROM otp_temp WHERE email=$1", [email]);
     if (!record.rows.length) {
-      return NextResponse.json({ success: false, message: "No pending verification found" });
+      return { success: false, message: "No pending verification found" };
     }
 
     // Generate new OTP
@@ -40,9 +41,9 @@ export async function POST(req) {
       text: `Your new OTP is: ${otp}. It expires in 5 minutes.`,
     });
 
-    return NextResponse.json({ success: true, message: "OTP resent successfully" });
+    return { success: true, message: "OTP resent successfully" };
   } catch (err) {
     console.error(err);
-    return NextResponse.json({ success: false, message: "Failed to resend OTP" });
+    return { success: false, message: "Failed to resend OTP" };
   }
 }

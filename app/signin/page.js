@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import Navbar from "../../components/Navbar";
-import Footer from "../../components/Footer";
+import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
+import { signInUser } from "@/actions/auth/signin";
 import { AiOutlineEye, AiOutlineEyeInvisible } from 'react-icons/ai';
 
 export default function SignInPage() {
@@ -24,43 +25,26 @@ export default function SignInPage() {
     setIsPageLoading(false);
   }, []);
 
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
     try {
-      const res = await fetch("/api/auth/signin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-
-      // Check if response is JSON
-      const contentType = res.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        setLoading(false);
-        setError("Server error. Please try again later or contact support");
-        console.error("API returned non-JSON response");
-        return;
-      }
-
-      const data = await res.json();
-      setLoading(false);
+      const data = await signInUser({ email, password });
 
       if (data.success) {
         localStorage.setItem("token", data.token);
         router.push("/dashboard");
       } else {
         // Handle different error scenarios
-        if (res.status === 404) {
+        if (data.message && data.message.includes("No account found")) {
           setError("No account found with this email address");
-        } else if (res.status === 401) {
-          if (data.message && data.message.includes("not verified")) {
-            setError("Please verify your email before signing in");
-          } else {
-            setError("Incorrect password. Please try again");
-          }
+        } else if (data.message && data.message.includes("verify your email")) {
+          setError("Please verify your email before signing in");
+        } else if (data.message && data.message.includes("Incorrect password")) {
+          setError("Incorrect password. Please try again");
         } else {
           setError(data.message || "Sign in failed. Please try again");
         }
@@ -68,11 +52,9 @@ export default function SignInPage() {
     } catch (err) {
       setLoading(false);
       console.error("Login error:", err);
-      if (err.name === 'SyntaxError') {
-        setError("Server configuration error. Please contact support");
-      } else {
-        setError("Network error. Please check your connection and try again");
-      }
+      setError("Network error. Please check your connection and try again");
+    } finally {
+      setLoading(false);
     }
   };
 

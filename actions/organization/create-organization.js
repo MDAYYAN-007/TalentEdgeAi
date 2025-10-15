@@ -1,33 +1,28 @@
-// /pages/api/org/create.js
+'use server';
 
-import { NextResponse } from "next/server";
-import { query } from "@/actions/db";
-import jwt from "jsonwebtoken";
+import { query } from '@/actions/db';
+import jwt from 'jsonwebtoken';
 
-export async function POST(req) {
+export async function createOrganization(organizationData) {
     try {
-        const body = await req.json();
-        const { companyName, createdById, adminEmail, industry, companySize, headquartersLocation } = body;
+        const { companyName, createdById, adminEmail, industry, companySize, headquartersLocation } = organizationData;
 
         // 1. Basic validation
         if (!companyName || !createdById || !adminEmail) {
-            return NextResponse.json(
-                { success: false, message: "Required organization details or creator ID are missing." },
-                { status: 400 }
-            );
+            return { success: false, message: "Required organization details or creator ID are missing." };
         }
 
         // 2. Transaction Start (Ensures both org creation and user update succeed or fail together)
         await query('BEGIN');
-        
+
         // 3. Check if the user already belongs to an organization (prevent multiple org creation)
         const checkOrgRes = await query("SELECT company_name FROM organizations WHERE created_by_user_id=$1", [createdById]);
         if (checkOrgRes.rows.length > 0) {
             await query('ROLLBACK');
-            return NextResponse.json(
-                { success: false, message: `User already administers organization: ${checkOrgRes.rows[0].company_name}` },
-                { status: 403 }
-            );
+            return {
+                success: false,
+                message: `User already administers organization: ${checkOrgRes.rows[0].company_name}`
+            };
         }
 
         // 4. Create the new Organization (The creator becomes the initial Org Admin)
@@ -37,8 +32,8 @@ export async function POST(req) {
             ) VALUES ($1, $2, $3, $4, $5, $6, 1) RETURNING id;
         `;
         const orgValues = [
-            companyName, 
-            createdById, 
+            companyName,
+            createdById,
             adminEmail,
             industry || null,
             companySize || null,
@@ -48,7 +43,6 @@ export async function POST(req) {
         const orgId = orgRes.rows[0].id;
 
         // 5. Upgrade User Role: Change user's role to 'OrgAdmin'
-        // NOTE: We assume your 'users' table has a 'role' column.
         const userUpdateSql = `
             UPDATE users SET role = $1, org_id = $2 WHERE id = $3 RETURNING *;
         `;
@@ -62,12 +56,12 @@ export async function POST(req) {
         const fullName = `${updatedUser.first_name || ""} ${updatedUser.last_name || ""}`.trim();
 
         const newToken = jwt.sign(
-            { 
-                id: createdById, 
-                email: adminEmail, 
+            {
+                id: createdById,
+                email: adminEmail,
                 role: 'OrgAdmin', // New highest role
                 name: fullName,
-                orgName : companyName,
+                orgName: companyName,
                 orgId: orgId, // Organization ID
                 isProfileComplete: updatedUser.isprofilecomplete || false,
             },
@@ -75,28 +69,28 @@ export async function POST(req) {
             { expiresIn: process.env.JWT_EXPIRY || "7d" }
         );
 
-        return NextResponse.json({
+        return {
             success: true,
             message: "Organization created and user role updated to OrgAdmin.",
             organizationId: orgId,
             token: newToken
-        });
+        };
 
     } catch (error) {
         await query('ROLLBACK'); // Rollback on any failure
         console.error("Organization creation error:", error);
 
-        // Check for specific Postgres unique violation error (e.g., if created_by_user_id constraint fails)
-        if (error.code === '23505') { 
-            return NextResponse.json(
-                { success: false, message: "This user is already the administrator of another organization." },
-                { status: 403 }
-            );
+        // Check for specific Postgres unique violation error
+        if (error.code === '23505') {
+            return {
+                success: false,
+                message: "This user is already the administrator of another organization."
+            };
         }
 
-        return NextResponse.json(
-            { success: false, message: "An unexpected error occurred during organization setup." },
-            { status: 500 }
-        );
+        return {
+            success: false,
+            message: "An unexpected error occurred during organization setup."
+        };
     }
 }

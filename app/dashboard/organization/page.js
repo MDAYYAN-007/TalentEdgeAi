@@ -20,7 +20,7 @@ export default function OrgAdminDashboard() {
         const fetchOrgData = async (userId, orgId, token) => {
             try {
                 // Fetch organization details from the new API
-                const res = await fetch(`/api/organization-data?orgId=${orgId}`, {
+                const res = await fetch(`/api/organization/getData?orgId=${orgId}`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
 
@@ -46,7 +46,7 @@ export default function OrgAdminDashboard() {
                 console.log('Decoded JWT:', decoded);
                 const currentUser = {
                     id: decoded.id,
-                    name: decoded.name || 'Admin',
+                    fullName: decoded.fullName || 'Admin',
                     email: decoded.email,
                     role: decoded.role || 'user',
                     orgId: decoded.orgId,
@@ -87,7 +87,7 @@ export default function OrgAdminDashboard() {
 
     const quickActions = [
         { title: 'Manage Users', desc: 'Invite or manage roles for HRs and Managers.', icon: UserPlus, href: '/org/users', color: 'bg-purple-500' },
-        { title: 'View All Jobs', desc: 'View and manage all job postings.', icon: Briefcase, href: '/jobs', color: 'bg-indigo-500' },
+        { title: 'View All Jobs', desc: 'View and manage all job postings.', icon: Briefcase, href: '/jobs/organization', color: 'bg-indigo-500' },
         { title: 'View Analytics', desc: 'Deep dive into hiring performance and trends.', icon: AreaChart, href: '/org/analytics', color: 'bg-emerald-500' },
         
     ];

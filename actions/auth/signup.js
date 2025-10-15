@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+'use server';
+
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { query } from '@/actions/db';
@@ -7,21 +8,21 @@ import nodemailer from "nodemailer";
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: Number(process.env.SMTP_PORT),
-    secure: process.env.SMTP_PORT == 465, // false for 587
+    secure: process.env.SMTP_PORT == "465",
     auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
     },
 });
 
-export async function POST(req) {
+export async function signupUser(formData) {
     try {
-        const { email, password, firstName, lastName } = await req.json();
+        const { email, password, firstName, lastName } = formData;
 
         // Check if email already exists
         const exists = await query("SELECT * FROM users WHERE email=$1", [email]);
         if (exists.rows.length > 0) {
-            return NextResponse.json({ success: false, message: "Email already exists" });
+            return { success: false, message: "Email already exists" };
         }
 
         // Hash password
@@ -43,9 +44,9 @@ export async function POST(req) {
             text: `Your OTP is: ${otp}. It expires in 5 minutes.`,
         });
 
-        return NextResponse.json({ success: true });
+        return { success: true };
     } catch (error) {
         console.error(error);
-        return NextResponse.json({ success: false, message: "Signup failed" });
+        return { success: false, message: "Signup failed" };
     }
 }

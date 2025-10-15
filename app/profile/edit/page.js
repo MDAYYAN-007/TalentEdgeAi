@@ -2,6 +2,9 @@
 
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
+import { parseResume } from '@/actions/resume/parseResume';
+import { getProfile } from '@/actions/profile/getProfile';
+import { saveProfile } from '@/actions/profile/saveProfile';
 import { useState, useEffect, useCallback } from "react";
 import { jwtDecode } from "jwt-decode";
 import Link from "next/link";
@@ -46,16 +49,13 @@ export default function ProfileEditPages() {
                 // Set email & fullName initially
                 setFormData(prev => ({
                     ...prev,
-                    fullName: decoded.fullName || prev.fullName,
+                    name: decoded.name || prev.name,
                     email: decoded.email || prev.email,
                 }));
 
-                // Fetch profile from backend
-                const res = await fetch(`/api/profile?userId=${decoded.id}`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
+                // Fetch profile using server action
+                const data = await getProfile(decoded.id);
 
-                const data = await res.json();
                 if (data.success && data.profile) {
                     const profile = data.profile;
 
@@ -109,7 +109,6 @@ export default function ProfileEditPages() {
         }));
     };
 
-    // Skill Handlers
     const addSkill = () => {
         const skill = skillInput.trim();
         if (skill && !formData.skills.includes(skill)) {
@@ -135,22 +134,15 @@ export default function ProfileEditPages() {
         try {
             const formData = new FormData();
             formData.append("file", file);
-            formData.append("workspace", "VDmSwfMR"); // Your Affinda workspace ID
 
-            const res = await fetch("/api/resume-parser", {
-                method: "POST",
-                body: formData,
-            });
+            const data = await parseResume(formData);
 
-            const data = await res.json();
             console.log("Resume Parse Response:", data);
 
             if (data.success) {
-
                 const parsed = data.parsedData;
 
                 console.log("Parsed Data:", parsed);
-
                 console.log("Raw Affinda Response:", data.raw);
 
                 // Auto-fill your form fields from Affinda's parsed data
@@ -198,10 +190,9 @@ export default function ProfileEditPages() {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-
         setIsSaving(true);
 
-        if (!formData.fullName.trim()) {
+        if (!formData.name.trim()) {
             toast.error("Full Name is required.");
             setActiveTab("basic");
             setIsSaving(false);
@@ -266,7 +257,7 @@ export default function ProfileEditPages() {
         const data = {
             userId: user?.id,
             email: formData.email,
-            fullName: formData.fullName,
+            name: formData.name,
             role: user?.role || 'user',
             phone: formData.phone,
             linkedinUrl: formData.linkedinUrl,
@@ -279,23 +270,17 @@ export default function ProfileEditPages() {
         };
 
         try {
-            const response = await fetch('/api/profile', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data),
-            });
+            const result = await saveProfile(data);
 
-            if (response.ok) {
-                const res = await response.json();
-                if (res.success) {
-                    localStorage.setItem("token", res.token);
-                    router.push('/profile');
-                    toast.success("Profile saved successfully!");
-                }
+            if (result.success) {
+                result.token.orgId = user?.orgId;
+                result.token.orgName = user?.orgName;
+                localStorage.setItem("token", result.token);
+                router.push('/profile');
+                toast.success("Profile saved successfully!");
             } else {
-                const errorData = await response.json();
-                console.error('Error saving profile:', errorData);
-                toast.error(errorData.message || 'Failed to save profile.');
+                console.error('Error saving profile:', result);
+                toast.error(result.message || 'Failed to save profile.');
             }
         } catch (error) {
             console.error('Unexpected error:', error);
@@ -415,7 +400,7 @@ export default function ProfileEditPages() {
                                                 {/* Full Name */}
                                                 <div>
                                                     <label className="block text-sm font-semibold text-slate-700 mb-2">Full Name *</label>
-                                                    <input type="text" name="fullName" value={formData.fullName} onChange={handleInputChange} className="w-full border-2 border-slate-200 rounded-xl px-4 py-2.5 text-slate-900 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all" />
+                                                    <input type="text" name="name" value={formData.name} onChange={handleInputChange} className="w-full border-2 border-slate-200 rounded-xl px-4 py-2.5 text-slate-900 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all" />
                                                 </div>
                                                 {/* Email */}
                                                 <div>

@@ -21,7 +21,7 @@ export default function Navbar() {
           // NOTE: 'jwt-decode' is a named import for CJS compatibility
           const decoded = jwtDecode(token);
           setUser({
-            name: decoded.name || decoded.fullName || 'User',
+            name: decoded.name || 'User',
             role: decoded.role || 'user',
           });
         } catch (err) {

@@ -3,6 +3,7 @@
 import Navbar from '../../components/Navbar';
 import Footer from '../../components/Footer';
 import { useState, useEffect } from 'react';
+import { signupUser } from '@/actions/auth/signup';
 import { useRouter } from 'next/navigation';
 import { AiOutlineEye, AiOutlineEyeInvisible } from 'react-icons/ai';
 import { CheckCircleIcon } from '@heroicons/react/20/solid';
@@ -71,13 +72,7 @@ export default function SignUpPage() {
     setLoading(true);
 
     try {
-      const res = await fetch('/api/auth/signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, firstName, lastName }),
-      });
-
-      const data = await res.json();
+      const data = await signupUser({ email, password, firstName, lastName });
       setLoading(false);
 
       if (data.success) {

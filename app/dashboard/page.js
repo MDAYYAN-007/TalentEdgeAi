@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import { jwtDecode } from 'jwt-decode';
 import { Mail, Briefcase, ChevronRight, BarChart3, TrendingUp, Zap, Users, ClipboardCheck } from 'lucide-react';
 import Navbar from '@/components/Navbar';

@@ -1,9 +1,11 @@
 'use client';
 
-import Navbar from '../../components/Navbar';
-import Footer from '../../components/Footer';
+import Navbar from '@/components/Navbar';
+import Footer from '@/components/Footer';
 import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { verifyOTP } from '@/actions/auth/verify';
+import { resendOTP } from '@/actions/auth/resend-otp';
 
 export default function VerifyPage() {
   const searchParams = useSearchParams();
@@ -28,14 +30,9 @@ export default function VerifyPage() {
     setError('');
 
     try {
-      const res = await fetch('/api/auth/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp }),
-      });
-      const data = await res.json();
+      const data = await verifyOTP({ email, otp });
 
-      if (res.ok && data.success) {
+      if (data.success) {
         localStorage.setItem("token", data.token);
         setStatus('Email verified successfully!');
         setTimeout(() => router.push('/dashboard'), 1500);
@@ -55,12 +52,7 @@ export default function VerifyPage() {
     setResending(true);
     setError('');
     try {
-      const res = await fetch('/api/auth/resend-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-      const data = await res.json();
+      const data = await resendOTP({ email }); // Use your server action
       if (data.success) {
         setStatus('OTP resent successfully. Check your email.');
       } else {

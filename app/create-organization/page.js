@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { createOrganization } from '@/actions/organization/create-organization';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
@@ -22,7 +23,6 @@ export default function OrgSignupPage() {
         headquartersLocation: ''
     });
 
-    // --- Authentication and Pre-Check Effect ---
     useEffect(() => {
         const token = localStorage.getItem('token');
         if (token) {
@@ -76,20 +76,14 @@ export default function OrgSignupPage() {
                 adminEmail: user.email // Email of the currently logged-in user
             };
 
-            const res = await fetch("/api/create-organization", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-            });
-
-            const data = await res.json();
+            const data = await createOrganization(payload);
 
             if (data.success) {
                 // Update JWT token in local storage
                 localStorage.setItem('token', data.token);
 
                 toast.success('Organization created! Redirecting to your Admin Dashboard. 🚀');
-                router.push('/dashboard');
+                router.push('/dashboard/organization');
             } else {
                 setError(data.message || "Failed to create organization.");
                 toast.error(data.message || "Organization creation failed.");

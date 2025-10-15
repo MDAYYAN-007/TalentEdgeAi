@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { jwtDecode } from 'jwt-decode';
 import Footer from '@/components/Footer';
 import Navbar from '@/components/Navbar';
+import { getProfile } from '@/actions/profile/getProfile';
 import Link from 'next/link';
 
 export default function ProfilePage() {
@@ -24,12 +25,9 @@ export default function ProfilePage() {
                 console.log('Decoded JWT:', decoded);
                 setUser(decoded);
 
-                const res = await fetch(`/api/profile?userId=${decoded.id}`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
+                const data = await getProfile(decoded.id);
 
-                console.log('Profile fetch response status:', res);
-                const data = await res.json();
+                console.log("Profile Fetch Response:", data);
 
                 if (data.success && data.profile) {
                     const profile = data.profile;
@@ -37,7 +35,7 @@ export default function ProfilePage() {
 
                     // Parse and set profile data
                     setProfileData({
-                        name: decoded.fullName || 'Unknown User',
+                        name: decoded.name || 'Unknown User',
                         email: decoded.email,
                         phone: profile.phone || '',
                         linkedinUrl: profile.linkedin_url || '',
