@@ -2,33 +2,65 @@
 
 import React, { useEffect, useState } from 'react';
 import { jwtDecode } from 'jwt-decode';
+import { useRouter } from 'next/navigation';
 import { Mail, Briefcase, ChevronRight, BarChart3, TrendingUp, Zap, Users, ClipboardCheck } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 
 export default function Dashboard() {
   const [user, setUser] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedRole, setSelectedRole] = useState('Employee');
   const [message, setMessage] = useState('');
+  const router = useRouter();
 
-  // JWT decoding logic
+  // JWT decoding logic with role-based redirection
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (token) {
-      try {
-        const decoded = jwtDecode(token);
-        setUser({
-          name: decoded.name || 'User',
-          email: decoded.email,
-          role: decoded.role || 'Candidate',
-        });
-      } catch (err) {
-        console.error('Invalid token', err);
-        localStorage.removeItem('token');
-      }
+    if (!token) {
+      router.push('/signin');
+      return;
     }
-  }, []);
+
+    try {
+      const decoded = jwtDecode(token);
+      setUser({
+        name: decoded.name || 'User',
+        email: decoded.email,
+        role: decoded.role || 'Candidate',
+        id: decoded.id,
+        orgId: decoded.orgId
+      });
+
+      // Redirect non-candidate users to their respective dashboards
+      if (decoded.role && decoded.role !== 'Candidate' && decoded.role !== 'user') {
+        switch (decoded.role) {
+          case 'HR':
+          case 'SeniorHR':
+            router.push('/jobs/organization');
+            return;
+          case 'OrgAdmin':
+            router.push('/organization/dashboard');
+            return;
+          case 'Employee':
+            // Employee stays on this dashboard
+            break;
+          default:
+            // For any other roles, redirect to organization dashboard
+            router.push('/organization/dashboard');
+            return;
+        }
+      }
+
+    } catch (err) {
+      console.error('Invalid token', err);
+      localStorage.removeItem('token');
+      router.push('/signin');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [router]);
 
   // Mock data arrays (can be replaced with API calls later)
   const applications = [
@@ -59,14 +91,73 @@ export default function Dashboard() {
     setIsSubmitting(false);
   };
 
-
-  if (!user) {
+  // Show loader while checking authentication and roles
+  if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-slate-600 font-medium text-lg">
-        Loading dashboard...
-      </div>
+      <>
+        <Navbar />
+        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
+          <div className="relative w-24 h-24 mb-6">
+
+            {/* Visual Circle/Ring effect for the animation */}
+            <div className="absolute inset-0 border-4 border-indigo-200 rounded-full opacity-50"></div>
+
+            {/* Main Icon Container with Rotation Animation */}
+            <div className="absolute inset-0 flex items-center justify-center transform animate-spin-medium">
+              <div className="relative w-16 h-16">
+                {/* 1. Briefcase (Career/Job) */}
+                <Briefcase className="absolute top-0 left-0 w-8 h-8 text-indigo-600 transform -translate-x-1/4 -translate-y-1/4" />
+
+                {/* 2. Zap (AI/Matching) */}
+                <Zap className="absolute bottom-0 left-1/2 w-8 h-8 text-purple-600 transform -translate-x-1/2 translate-y-1/2" />
+
+                {/* 3. TrendingUp (Progress/Success) */}
+                <TrendingUp className="absolute top-1/2 right-0 w-8 h-8 text-emerald-600 transform translate-x-1/2 -translate-y-1/2" />
+              </div>
+            </div>
+
+            {/* Define the custom, medium-speed spin animation */}
+            <style jsx>{`
+                    .animate-spin-medium {
+                        animation: spin-medium 3s linear infinite;
+                    }
+                    @keyframes spin-medium {
+                        from {
+                            transform: rotate(0deg);
+                        }
+                        to {
+                            transform: rotate(360deg);
+                        }
+                    }
+                `}</style>
+          </div>
+
+          {/* Loading Text */}
+          <h1 className="text-xl font-bold text-slate-800">
+            Loading your dashboard...
+          </h1>
+        </div>
+        <Footer />
+      </>
     );
   }
+
+  // If user is not a candidate or employee, they should have been redirected
+  // This is a fallback in case the redirect doesn't happen immediately
+  // if (user && user.role !== 'Employee' && user.role !== 'user') {
+  //   return (
+  //     <>
+  //       <Navbar />
+  //       <div className="min-h-screen flex items-center justify-center">
+  //         <div className="text-center">
+  //           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+  //           <p className="mt-4 text-slate-600">Redirecting to your dashboard...</p>
+  //         </div>
+  //       </div>
+  //       <Footer />
+  //     </>
+  //   );
+  // }
 
   return (
     <>
@@ -185,13 +276,12 @@ export default function Dashboard() {
                       <td className="px-6 py-4 text-sm text-slate-600">{app.company}</td>
                       <td className="px-6 py-4 text-center">
                         <span
-                          className={`px-3 py-1 text-xs font-semibold rounded-full ${
-                            app.score >= 90
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : app.score >= 70
+                          className={`px-3 py-1 text-xs font-semibold rounded-full ${app.score >= 90
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : app.score >= 70
                               ? 'bg-indigo-100 text-indigo-800'
                               : 'bg-red-100 text-red-800'
-                          }`}
+                            }`}
                         >
                           {app.score}%
                         </span>

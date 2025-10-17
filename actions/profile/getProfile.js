@@ -4,12 +4,10 @@ import { query } from '@/actions/db';
 
 export async function getProfile(userId) {
     try {
-        // console.log("Fetching profile for userId:", userId);
 
         if (!userId) {
             return { success: false, message: "userId is required" };
         }
-        console.log(userId)
 
         const sql = "SELECT * FROM profiles WHERE user_id = $1";
         const result = await query(sql, [userId]);
@@ -24,9 +22,7 @@ export async function getProfile(userId) {
 
         // Parse JSON fields before returning
         const profile = result.rows[0];
-        // console.log("Profile data retrieved:", profile);
-
-        // Ensure all array fields are properly formatted
+        
         profile.experiences = Array.isArray(profile.experiences) ? profile.experiences : [];
         profile.education = Array.isArray(profile.education) ? profile.education : [];
         profile.skills = Array.isArray(profile.skills) ? profile.skills : [];

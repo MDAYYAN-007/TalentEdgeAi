@@ -26,6 +26,14 @@ export async function saveProfile(profileData) {
             return { success: false, message: "userId is required" };
         }
 
+        const isProfileComplete = (
+            phone &&
+            phone.trim().length > 0 &&
+            skills &&
+            skills.length > 0
+        );
+
+        console.log(isProfileComplete);
         // Upsert query: insert if not exists, else update
         const sql = `
             INSERT INTO profiles
@@ -60,6 +68,16 @@ export async function saveProfile(profileData) {
 
         const result = await query(sql, values);
 
+        // Get user's current org info to include in token
+        const userRes = await query("SELECT org_id FROM users WHERE id = $1", [userId]);
+        const userData = userRes.rows[0];
+
+        let orgName = null;
+        if (userData.org_id) {
+            const orgRes = await query("SELECT company_name FROM organizations WHERE id = $1", [userData.org_id]);
+            orgName = orgRes?.rows[0]?.company_name || null;
+        }
+
         // Generate new JWT token with updated profile completion status
         const newToken = jwt.sign(
             {
@@ -67,7 +85,9 @@ export async function saveProfile(profileData) {
                 email,
                 role,
                 name,
-                isProfileComplete: true,
+                isProfileComplete: isProfileComplete,
+                orgId: userData.org_id || null,
+                orgName: orgName
             },
             process.env.JWT_SECRET,
             { expiresIn: process.env.JWT_EXPIRY || "7d" }

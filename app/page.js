@@ -36,7 +36,7 @@ export default function Home() {
                   🏢 CREATE ORGANIZATION
                 </Link>
                 <Link
-                  href="/login" // Existing Login route (now for Employees/Candidates)
+                  href="/signin" // Existing Login route (now for Employees/Candidates)
                   className="inline-flex items-center px-6 py-3 rounded-md border border-white text-white hover:bg-white hover:text-indigo-700 transition"
                 >
                   👤 SIGN IN AS A USER

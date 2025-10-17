@@ -273,8 +273,6 @@ export default function ProfileEditPages() {
             const result = await saveProfile(data);
 
             if (result.success) {
-                result.token.orgId = user?.orgId;
-                result.token.orgName = user?.orgName;
                 localStorage.setItem("token", result.token);
                 router.push('/profile');
                 toast.success("Profile saved successfully!");
@@ -298,7 +296,6 @@ export default function ProfileEditPages() {
         { key: 'experience', label: 'Experience', Icon: Briefcase },
         { key: 'projects', label: 'Projects', Icon: BookOpen },
     ];
-
 
     return (
         <>
@@ -453,7 +450,7 @@ export default function ProfileEditPages() {
                                                     <button
                                                         type="button"
                                                         onClick={addSkill}
-                                                        className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors font-semibold"
+                                                        className="px-6 py-2.5 cursor-pointer bg-indigo-600 text-white rounded-xl hover:bg-indigo-800 transition-colors font-semibold"
                                                     >
                                                         <Plus className="w-5 h-5" />
                                                     </button>
@@ -468,7 +465,7 @@ export default function ProfileEditPages() {
                                                             <button
                                                                 type="button"
                                                                 onClick={() => removeSkill(skill)}
-                                                                className="text-indigo-500 hover:text-indigo-900 p-0.5 rounded-full hover:bg-indigo-200 transition-colors"
+                                                                className="text-indigo-500 cursor-pointer hover:text-indigo-900 p-0.5 rounded-full hover:bg-indigo-200 transition-colors"
                                                             >
                                                                 <X className="w-3.5 h-3.5" />
                                                             </button>
@@ -491,7 +488,7 @@ export default function ProfileEditPages() {
                                                 <button
                                                     type="button"
                                                     onClick={() => addNestedItem('education', { degree: '', institution: '', year: '', grade: '' })}
-                                                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-semibold"
+                                                    className="flex items-center gap-2 cursor-pointer px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-semibold"
                                                 >
                                                     <Plus className="w-5 h-5" /> Add Degree
                                                 </button>
@@ -505,7 +502,7 @@ export default function ProfileEditPages() {
                                                         <button
                                                             type="button"
                                                             onClick={() => removeNestedItem('education', index)}
-                                                            className="absolute top-4 right-4 text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors z-10"
+                                                            className="absolute cursor-pointer top-4 right-4 text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors z-10"
                                                             aria-label="Remove item"
                                                         >
                                                             <Trash2 className="w-5 h-5" />
@@ -551,7 +548,7 @@ export default function ProfileEditPages() {
                                                 <button
                                                     type="button"
                                                     onClick={() => addNestedItem('experiences', { jobTitle: '', company: '', duration: '', description: '' })}
-                                                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-semibold"
+                                                    className="flex items-center gap-2 cursor-pointer px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-semibold"
                                                 >
                                                     <Plus className="w-5 h-5" /> Add Job
                                                 </button>
@@ -562,7 +559,7 @@ export default function ProfileEditPages() {
                                                     <button
                                                         type="button"
                                                         onClick={() => removeNestedItem('experiences', index)}
-                                                        className="absolute top-4 right-4 text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors z-10"
+                                                        className="absolute cursor-pointer top-4 right-4 text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors z-10"
                                                         aria-label="Remove item"
                                                     >
                                                         <Trash2 className="w-5 h-5" />
@@ -608,7 +605,7 @@ export default function ProfileEditPages() {
                                                 <button
                                                     type="button"
                                                     onClick={() => addNestedItem('projects', { title: '', description: '', githubUrl: '', liveUrl: '' })}
-                                                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-semibold"
+                                                    className="flex items-center gap-2 cursor-pointer px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-semibold"
                                                 >
                                                     <Plus className="w-5 h-5" /> Add Project
                                                 </button>
@@ -620,7 +617,7 @@ export default function ProfileEditPages() {
                                                     <button
                                                         type="button"
                                                         onClick={() => removeNestedItem('projects', index)}
-                                                        className="absolute top-4 right-4 text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors z-10"
+                                                        className="absolute cursor-pointer top-4 right-4 text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors z-10"
                                                         aria-label="Remove item"
                                                     >
                                                         <Trash2 className="w-5 h-5" />

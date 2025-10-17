@@ -34,7 +34,7 @@ export async function signupUser(formData) {
         // Store OTP and name temporarily
         await query(
             "INSERT INTO otp_temp (email, otp, password, role, first_name, last_name, created_at, expires_at) VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7)",
-            [email, otp, hashedPassword, "user", firstName, lastName, expiresAt]
+            [email, otp, hashedPassword, "User", firstName, lastName, expiresAt]
         );
 
         await transporter.sendMail({

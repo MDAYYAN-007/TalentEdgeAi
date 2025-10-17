@@ -29,7 +29,7 @@ export async function createOrganization(organizationData) {
         const orgInsertSql = `
             INSERT INTO organizations (
                 company_name, created_by_user_id, admin_email, industry, company_size, headquarters_location, hr_count
-            ) VALUES ($1, $2, $3, $4, $5, $6, 1) RETURNING id;
+            ) VALUES ($1, $2, $3, $4, $5, $6, 0) RETURNING id;
         `;
         const orgValues = [
             companyName,

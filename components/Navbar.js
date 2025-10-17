@@ -137,10 +137,10 @@ export default function Navbar() {
                   Home
                 </a>
                 <a
-                  href="/login"
+                  href="/signin"
                   className="ml-2 inline-flex items-center px-4 py-2 rounded-md bg-indigo-600 text-white font-medium shadow hover:opacity-95"
                 >
-                  Login
+                  Signin
                 </a>
               </nav>
 

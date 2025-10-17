@@ -361,7 +361,7 @@ export default function SignInPage() {
                       <button
                         type="submit"
                         disabled={loading}
-                        className={`w-full py-3 sm:py-4 rounded-xl text-white font-bold shadow-lg transition-all duration-200 flex items-center justify-center text-sm sm:text-base ${loading
+                        className={`w-full py-3 sm:py-4 cursor-pointer rounded-xl text-white font-bold shadow-lg transition-all duration-200 flex items-center justify-center text-sm sm:text-base ${loading
                           ? 'bg-indigo-400 cursor-not-allowed'
                           : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 shadow-indigo-500/50 hover:shadow-xl hover:shadow-indigo-500/50 hover:-translate-y-0.5 active:translate-y-0'
                           }`}

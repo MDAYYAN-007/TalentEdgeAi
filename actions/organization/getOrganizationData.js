@@ -1,13 +1,27 @@
-import { NextResponse } from "next/server";
-import { query } from "@/actions/db";
+'use server';
 
-export async function GET(req) {
+import { query } from '@/actions/db';
+
+export async function getOrganizationData(orgId, authData) {
     try {
-        const { searchParams } = new URL(req.url);
-        const orgId = searchParams.get('orgId');
-
         if (!orgId) {
-            return NextResponse.json({ success: false, message: "Organization ID is required." }, { status: 400 });
+            return {
+                success: false,
+                message: "Organization ID is required."
+            };
+        }
+
+        // Optional: Add authorization check if needed
+        if (authData) {
+            const { userId, userRole, orgId: userOrgId } = authData;
+
+            // Check if user has access to this organization
+            if (userOrgId && parseInt(userOrgId) !== parseInt(orgId)) {
+                return {
+                    success: false,
+                    message: "Access denied: You are not authorized to view this organization's data."
+                };
+            }
         }
 
         // 1. Fetch Organization data and its metric counts
@@ -21,7 +35,10 @@ export async function GET(req) {
         const orgRes = await query(orgSql, [orgId]);
 
         if (!orgRes.rows.length) {
-            return NextResponse.json({ success: false, message: "Organization not found." }, { status: 404 });
+            return {
+                success: false,
+                message: "Organization not found."
+            };
         }
 
         const orgData = orgRes.rows[0];
@@ -33,7 +50,7 @@ export async function GET(req) {
             aiMatchSuccessRate: 89,
         };
 
-        return NextResponse.json({
+        return {
             success: true,
             organization: {
                 // Map database columns to camelCase for front-end
@@ -46,13 +63,13 @@ export async function GET(req) {
                 seniorHrCount: parseInt(orgData.senior_hr_count, 10),
                 ...mockAnalytics,
             }
-        });
+        };
 
     } catch (error) {
-        console.error("API Org Data Error:", error);
-        return NextResponse.json(
-            { success: false, message: "Server error fetching organization data." },
-            { status: 500 }
-        );
+        console.error("Organization Data Error:", error);
+        return {
+            success: false,
+            message: "Server error fetching organization data."
+        };
     }
 }

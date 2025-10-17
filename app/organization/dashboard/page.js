@@ -2,9 +2,10 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import { jwtDecode } from 'jwt-decode';
-import { ChevronRight, TrendingUp, Zap, Users, Briefcase, Building2, UserPlus, FileText, Settings, AreaChart, MapPin, ClipboardList, Loader2, LogOut,Mail } from 'lucide-react';
+import { ChevronRight, TrendingUp, Zap, Users, Briefcase, Building2, UserPlus, FileText, Settings, AreaChart, MapPin, ClipboardList, Loader2, LogOut, Mail, RefreshCw } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import { getOrganizationData } from '@/actions/organization/getOrganizationData';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
@@ -19,17 +20,18 @@ export default function OrgAdminDashboard() {
     useEffect(() => {
         const fetchOrgData = async (userId, orgId, token) => {
             try {
-                // Fetch organization details from the new API
-                const res = await fetch(`/api/organization/getData?orgId=${orgId}`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                });
+                const authData = {
+                    userId: userId,
+                    orgId: orgId,
+                    userRole: user?.role // Make sure user is set before calling this
+                };
 
-                const data = await res.json();
+                const result = await getOrganizationData(orgId, authData);
 
-                if (data.success && data.organization) {
-                    setOrgData(data.organization);
+                if (result.success && result.organization) {
+                    setOrgData(result.organization);
                 } else {
-                    setError(data.message || "Failed to load organization data.");
+                    setError(result.message || "Failed to load organization data.");
                 }
             } catch (err) {
                 console.error("Org data fetch error:", err);
@@ -38,7 +40,7 @@ export default function OrgAdminDashboard() {
                 setIsLoading(false);
             }
         };
-
+        
         const token = localStorage.getItem('token');
         if (token) {
             try {
@@ -54,11 +56,11 @@ export default function OrgAdminDashboard() {
                 setUser(currentUser);
 
                 // Only proceed to fetch data if the user is linked to an organization
-                if (currentUser.role === 'OrgAdmin') {
+                if (currentUser.role === 'OrgAdmin' && currentUser.orgId) {
                     fetchOrgData(currentUser.id, currentUser.orgId, token);
                 } else {
                     // Redirect non-admin roles to the general dashboard
-                    // router.push('/dashboard');
+                    router.push('/dashboard');
                     console.warn('Access denied: User is not an OrgAdmin or lacks org association. Redirecting to /dashboard.');
                 }
 
@@ -87,37 +89,95 @@ export default function OrgAdminDashboard() {
 
     const quickActions = [
         { title: 'Manage Users', desc: 'Invite or manage roles for HRs and Managers.', icon: UserPlus, href: '/org/users', color: 'bg-purple-500' },
-        { title: 'View All Jobs', desc: 'View and manage all job postings.', icon: Briefcase, href: '/jobs/organization', color: 'bg-indigo-500' },
+        { title: 'View All Jobs', desc: 'View and manage all job postings.', icon: Briefcase, href: '/organization/jobs', color: 'bg-indigo-500' },
         { title: 'View Analytics', desc: 'Deep dive into hiring performance and trends.', icon: AreaChart, href: '/org/analytics', color: 'bg-emerald-500' },
-        
+
     ];
-
-
-    // --- Render Logic ---
 
     if (isLoading || !user) {
         return (
-            <div className="min-h-screen flex items-center justify-center text-slate-600 font-medium text-lg">
-                <Loader2 className="animate-spin w-8 h-8 mr-3 text-indigo-600" /> Loading Admin Console...
-            </div>
+            <>
+                <Navbar />
+                <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50">
+                    <div className="relative w-24 h-24 mb-6">
+                        {/* Outer Ring: Placeholder for a visual circle/ring effect */}
+                        <div className="absolute inset-0 border-4 border-indigo-200 rounded-full opacity-50"></div>
+
+                        {/* Inner Icon Container with Spin */}
+                        <div className="absolute inset-0 flex items-center justify-center transform animate-spin-slow">
+                            <div className="relative w-16 h-16">
+                                {/* The Organization Icon */}
+                                <Building2 className="absolute top-0 left-0 w-8 h-8 text-indigo-600 transform -translate-x-1/2 -translate-y-1/2" />
+
+                                {/* The Users Icon (representing the team/employees) */}
+                                <Users className="absolute bottom-0 right-0 w-8 h-8 text-purple-600 transform translate-x-1/2 translate-y-1/2" />
+
+                                {/* A small loader for continued movement emphasis */}
+                                <Loader2 className="absolute inset-0 m-auto w-6 h-6 text-indigo-400 animate-spin" />
+                            </div>
+                        </div>
+
+                        {/* A custom keyframe spin that is slower for the whole container */}
+                        <style jsx>{`
+                    .animate-spin-slow {
+                        animation: spin-slow 6s linear infinite;
+                    }
+                    @keyframes spin-slow {
+                        from {
+                            transform: rotate(0deg);
+                        }
+                        to {
+                            transform: rotate(360deg);
+                        }
+                    }
+                `}</style>
+                    </div>
+
+                    <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                        <Loader2 className="w-5 h-5 animate-spin text-indigo-600" />
+                        Loading Dashboard...
+                    </h1>
+                    <p className="mt-2 text-sm text-slate-500">
+                        Securing connection and fetching organization data...
+                    </p>
+                </div>
+                <Footer />
+            </>
         );
     }
 
     // Fallback if data loading failed
     if (error) {
         return (
-            <div className="min-h-screen flex items-center justify-center p-8">
-                <div className="text-center bg-red-50 border border-red-200 p-8 rounded-xl shadow-lg">
-                    <h1 className="text-2xl font-bold text-red-700 mb-4">Error Accessing Organization Data</h1>
-                    <p className="text-red-600">{error}</p>
-                    <button
-                        onClick={() => router.push('/signin')}
-                        className="mt-6 px-4 py-2 bg-red-600 text-white rounded-lg flex items-center gap-2 mx-auto hover:bg-red-700"
-                    >
-                        <LogOut className="w-5 h-5" /> Sign In Again
-                    </button>
+            <>
+                <Navbar />
+                <div className="flex items-center justify-center p-20">
+                    <div className="text-center bg-red-50 border border-red-200 p-8 rounded-xl shadow-lg max-w-md w-full">
+                        <h1 className="text-2xl font-bold text-red-700 mb-4">Error Accessing Organization Data</h1>
+                        <p className="text-red-600 mb-6">{error}</p>
+
+                        {/* Reload option - Buttons side by side */}
+                        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                            <button
+                                onClick={() => window.location.reload()}
+                                className="px-4 py-2 bg-red-500 text-white rounded-lg flex items-center gap-2 justify-center hover:bg-red-600 transition-colors"
+                            >
+                                <RefreshCw className="w-5 h-5" />
+                                Reload Page
+                            </button>
+
+                            <button
+                                onClick={() => router.push('/signin')}
+                                className="px-4 py-2 bg-red-600 text-white rounded-lg flex items-center gap-2 justify-center hover:bg-red-700 transition-colors"
+                            >
+                                <LogOut className="w-5 h-5" />
+                                Sign In Again
+                            </button>
+                        </div>
+                    </div>
                 </div>
-            </div>
+                <Footer />
+            </>
         );
     }
 
