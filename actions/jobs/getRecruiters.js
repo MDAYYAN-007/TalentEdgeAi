@@ -51,7 +51,6 @@ export async function getRecruiters(orgId, currentUserId, currentUserRole) {
                 ...(orgAdmin ? [orgAdmin.id.toString()] : [])
             ];
         }
-        // HR users cannot create jobs, so no default selection for them
 
         return {
             success: true,

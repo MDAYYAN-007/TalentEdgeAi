@@ -8,24 +8,40 @@ import {
     ArrowLeft, Edit, FileText, Zap, Type, Users,
     Clock, Star, Calendar, Eye, EyeOff, CheckCircle,
     XCircle, BarChart3, Plus, Copy, Download,
-    Shield, Settings, BookOpen
+    BookOpen, Play, Trash2, AlertTriangle
 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { getTestDetails } from '@/actions/tests/getTestDeatils';
+import { setTestInactive } from '@/actions/tests/setTestInactive';
+import { reactivateTest } from '@/actions/tests/setTestActive';
 
 export default function TestDetailsPage() {
     const router = useRouter();
     const params = useParams();
     const testId = params.testId;
-    
+
+    // State Management
     const [user, setUser] = useState(null);
     const [test, setTest] = useState(null);
     const [questions, setQuestions] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('overview');
     const [expandedQuestions, setExpandedQuestions] = useState(new Set());
+
+    // Modal States
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [modalData, setModalData] = useState({
+        type: '', // 'deactivate' or 'reactivate'
+        testId: null,
+        testTitle: '',
+        action: null
+    });
+
+    // Loading States
+    const [deactivateLoading, setDeactivateLoading] = useState(false);
+    const [reactivateLoading, setReactivateLoading] = useState(false);
 
     // Authentication
     useEffect(() => {
@@ -86,6 +102,79 @@ export default function TestDetailsPage() {
         }
     }, [user, testId]);
 
+    // Check if user has edit access (creator, allowed user, or OrgAdmin)
+    const hasEditAccess = () => {
+        if (!user || !test) return false;
+
+        // User is the creator
+        if (test.created_by === user.id) return true;
+
+        // User is OrgAdmin (has access to all tests)
+        if (user.role === 'OrgAdmin') return true;
+
+        // Check if user is in the allowed_users array
+        if (test.allowed_users && Array.isArray(test.allowed_users)) {
+            return test.allowed_users.includes(user.id);
+        }
+
+        return false;
+    };
+
+    const userHasEditAccess = hasEditAccess();
+
+    // Open confirmation modal
+    const openConfirmationModal = (type, testId, testTitle, action) => {
+        setModalData({
+            type,
+            testId,
+            testTitle,
+            action
+        });
+        setIsModalOpen(true);
+    };
+
+    // Close modal
+    const closeModal = () => {
+        setIsModalOpen(false);
+        setModalData({
+            type: '',
+            testId: null,
+            testTitle: '',
+            action: null
+        });
+    };
+
+    // Handle modal confirmation
+    const handleModalConfirm = async () => {
+        if (!modalData.action) return;
+
+        if (modalData.type === 'deactivate') {
+            setDeactivateLoading(true);
+        } else {
+            setReactivateLoading(true);
+        }
+
+        try {
+            await modalData.action();
+            toast.success(
+                modalData.type === 'deactivate'
+                    ? 'Test deactivated successfully'
+                    : 'Test reactivated successfully'
+            );
+            fetchTestDetails(); // Refresh the test data
+        } catch (error) {
+            console.error(`Error ${modalData.type}ing test:`, error);
+            toast.error(`Error ${modalData.type}ing test`);
+        } finally {
+            if (modalData.type === 'deactivate') {
+                setDeactivateLoading(false);
+            } else {
+                setReactivateLoading(false);
+            }
+            closeModal();
+        }
+    };
+
     // Toggle question expansion
     const toggleQuestionExpansion = (questionId) => {
         setExpandedQuestions(prev => {
@@ -98,9 +187,6 @@ export default function TestDetailsPage() {
             return newSet;
         });
     };
-
-    // Check if user can edit (creator or OrgAdmin)
-    const canEdit = user && test && (user.role === 'OrgAdmin' || user.id === test.created_by);
 
     // Format date
     const formatDate = (dateString) => {
@@ -141,6 +227,7 @@ export default function TestDetailsPage() {
         }
     };
 
+    // Loading State
     if (!user || isLoading) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
@@ -149,6 +236,7 @@ export default function TestDetailsPage() {
         );
     }
 
+    // Test Not Found State
     if (!test) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
@@ -160,7 +248,7 @@ export default function TestDetailsPage() {
                     <p className="text-gray-600 mb-6">The test you're looking for doesn't exist or you don't have access to it.</p>
                     <button
                         onClick={() => router.push('/organization/tests')}
-                        className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
+                        className="cursor-pointer px-6 py-2 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
                     >
                         Back to Tests
                     </button>
@@ -173,14 +261,15 @@ export default function TestDetailsPage() {
         <>
             <Navbar />
             <Toaster />
+
             <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 py-8">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    {/* Header */}
+                    {/* Header Section */}
                     <div className="mb-8">
                         <div className="flex items-center gap-4 mb-6">
                             <button
                                 onClick={() => router.push('/organization/tests')}
-                                className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+                                className="flex items-center gap-2 text-gray-600 hover:text-indigo-600 cursor-pointer p-1 transition-colors"
                             >
                                 <ArrowLeft className="w-5 h-5" />
                                 Back to Tests
@@ -199,19 +288,18 @@ export default function TestDetailsPage() {
                                                 {test.title}
                                             </h1>
                                             <div className="flex items-center gap-3 flex-wrap">
-                                                <span className={`px-3 py-1 rounded-full text-sm font-semibold border ${
-                                                    test.is_active 
-                                                        ? 'bg-green-100 text-green-800 border-green-200' 
-                                                        : 'bg-gray-100 text-gray-800 border-gray-200'
-                                                }`}>
+                                                <span className={`px-3 py-1 rounded-full text-sm font-semibold border ${test.is_active
+                                                    ? 'bg-green-100 text-green-800 border-green-200'
+                                                    : 'bg-gray-100 text-gray-800 border-gray-200'
+                                                    }`}>
                                                     {test.is_active ? 'Active' : 'Inactive'}
                                                 </span>
-                                                {test.is_proctored && (
-                                                    <span className="px-3 py-1 rounded-full text-sm font-semibold bg-blue-100 text-blue-800 border border-blue-200">
-                                                        <Shield className="w-4 h-4 inline mr-1" />
-                                                        Proctored
-                                                    </span>
-                                                )}
+                                                <span className={`px-3 py-1 rounded-full text-sm font-semibold ${userHasEditAccess
+                                                    ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                                                    : 'bg-gray-100 text-gray-800 border border-gray-200'
+                                                    }`}>
+                                                    {test.created_by === user.id ? 'Owner' : userHasEditAccess ? 'Can Edit' : 'View Only'}
+                                                </span>
                                             </div>
                                         </div>
                                     </div>
@@ -242,19 +330,64 @@ export default function TestDetailsPage() {
                                     </div>
                                 </div>
 
+                                {/* Action Buttons */}
                                 <div className="flex items-center gap-3">
-                                    {canEdit && (
+                                    {/* Edit Button - Only for users with edit access */}
+                                    {userHasEditAccess && (
                                         <button
                                             onClick={() => router.push(`/organization/create-test?edit=${test.id}`)}
-                                            className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+                                            className="cursor-pointer flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl"
                                         >
                                             <Edit className="w-5 h-5" />
                                             Edit Test
                                         </button>
                                     )}
+
+                                    {/* Deactivate/Reactivate Button - Only for users with edit access */}
+                                    {userHasEditAccess && (
+                                        test.is_active ? (
+                                            <button
+                                                onClick={() => openConfirmationModal(
+                                                    'deactivate',
+                                                    test.id,
+                                                    test.title,
+                                                    () => setTestInactive(test.id, { orgId: user.orgId, userId: user.id })
+                                                )}
+                                                disabled={deactivateLoading}
+                                                className="cursor-pointer flex items-center gap-2 px-6 py-3 bg-red-600 text-white rounded-xl font-semibold hover:bg-red-700 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50"
+                                            >
+                                                {deactivateLoading ? (
+                                                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                                                ) : (
+                                                    <Trash2 className="w-5 h-5" />
+                                                )}
+                                                Deactivate
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={() => openConfirmationModal(
+                                                    'reactivate',
+                                                    test.id,
+                                                    test.title,
+                                                    () => reactivateTest(test.id, { orgId: user.orgId, userId: user.id })
+                                                )}
+                                                disabled={reactivateLoading}
+                                                className="cursor-pointer flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50"
+                                            >
+                                                {reactivateLoading ? (
+                                                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                                                ) : (
+                                                    <Play className="w-5 h-5" />
+                                                )}
+                                                Reactivate
+                                            </button>
+                                        )
+                                    )}
+
+                                    {/* Assign Test Button - Redirects to assign test page */}
                                     <button
-                                        onClick={() => toast.success('Test assigned successfully!')}
-                                        className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+                                        onClick={() => router.push(`/organization/tests/${testId}/assign`)}
+                                        className="cursor-pointer flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-all duration-200 shadow-lg hover:shadow-xl"
                                     >
                                         <Users className="w-5 h-5" />
                                         Assign Test
@@ -270,7 +403,6 @@ export default function TestDetailsPage() {
                             {[
                                 { id: 'overview', label: 'Overview', icon: BarChart3 },
                                 { id: 'questions', label: 'Questions', icon: BookOpen },
-                                { id: 'settings', label: 'Settings', icon: Settings },
                                 { id: 'analytics', label: 'Analytics', icon: BarChart3 }
                             ].map((tab) => {
                                 const IconComponent = tab.icon;
@@ -278,11 +410,10 @@ export default function TestDetailsPage() {
                                     <button
                                         key={tab.id}
                                         onClick={() => setActiveTab(tab.id)}
-                                        className={`flex items-center gap-3 px-6 py-4 rounded-xl font-semibold transition-all duration-300 ${
-                                            activeTab === tab.id
-                                                ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg transform scale-105'
-                                                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                                        }`}
+                                        className={`cursor-pointer flex items-center gap-3 px-6 py-4 rounded-xl font-semibold transition-all duration-300 ${activeTab === tab.id
+                                            ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg transform scale-105'
+                                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                                            }`}
                                     >
                                         <IconComponent className="w-5 h-5" />
                                         {tab.label}
@@ -298,37 +429,97 @@ export default function TestDetailsPage() {
                         {activeTab === 'overview' && (
                             <div className="p-6 lg:p-8">
                                 <h2 className="text-2xl lg:text-3xl font-bold text-gray-900 mb-6">Test Overview</h2>
-                                
-                                {/* Key Metrics */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                                    <div className="bg-blue-50 p-6 rounded-xl border border-blue-200">
-                                        <div className="text-2xl font-bold text-blue-600">{test.total_marks}</div>
-                                        <div className="text-sm text-blue-700 font-semibold">Total Marks</div>
+
+                                {/* Basic Test Information */}
+                                <div className="bg-gray-50 p-6 rounded-xl border border-gray-200 mb-8">
+                                    <h3 className="text-xl font-bold text-gray-900 mb-4">Basic Information</h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                        <div className="bg-white p-4 rounded-lg border border-gray-200">
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <Clock className="w-5 h-5 text-blue-600" />
+                                                <div>
+                                                    <div className="font-semibold text-gray-900">Duration</div>
+                                                    <div className="text-2xl font-bold text-blue-600">{test.duration_minutes}</div>
+                                                    <div className="text-sm text-gray-600">minutes</div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-white p-4 rounded-lg border border-gray-200">
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <Star className="w-5 h-5 text-green-600" />
+                                                <div>
+                                                    <div className="font-semibold text-gray-900">Passing Score</div>
+                                                    <div className="text-2xl font-bold text-green-600">{test.passing_marks}%</div>
+                                                    <div className="text-sm text-gray-600">to pass</div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-white p-4 rounded-lg border border-gray-200">
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <FileText className="w-5 h-5 text-purple-600" />
+                                                <div>
+                                                    <div className="font-semibold text-gray-900">Total Questions</div>
+                                                    <div className="text-2xl font-bold text-purple-600">{test.question_count}</div>
+                                                    <div className="text-sm text-gray-600">questions</div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-white p-4 rounded-lg border border-gray-200">
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <Users className="w-5 h-5 text-orange-600" />
+                                                <div>
+                                                    <div className="font-semibold text-gray-900">Status</div>
+                                                    <div className={`text-lg font-bold ${test.is_active ? 'text-green-600' : 'text-gray-600'
+                                                        }`}>
+                                                        {test.is_active ? 'Active' : 'Inactive'}
+                                                    </div>
+                                                    <div className="text-sm text-gray-600">test</div>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="bg-green-50 p-6 rounded-xl border border-green-200">
-                                        <div className="text-2xl font-bold text-green-600">{test.passing_marks}%</div>
-                                        <div className="text-sm text-green-700 font-semibold">Passing Score</div>
-                                    </div>
-                                    <div className="bg-purple-50 p-6 rounded-xl border border-purple-200">
-                                        <div className="text-2xl font-bold text-purple-600">{test.assignment_count || 0}</div>
-                                        <div className="text-sm text-purple-700 font-semibold">Total Assignments</div>
-                                    </div>
-                                    <div className="bg-orange-50 p-6 rounded-xl border border-orange-200">
-                                        <div className="text-2xl font-bold text-orange-600">{test.duration_minutes}</div>
-                                        <div className="text-sm text-orange-700 font-semibold">Minutes Duration</div>
+
+                                    {/* Additional Info */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                        <div className="bg-white p-4 rounded-lg border border-gray-200">
+                                            <div className="flex items-center gap-3">
+                                                <FileText className="w-5 h-5 text-indigo-600" />
+                                                <div>
+                                                    <div className="font-semibold text-gray-900">Total Marks</div>
+                                                    <div className="text-lg font-bold text-indigo-600">{test.total_marks} marks</div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-white p-4 rounded-lg border border-gray-200">
+                                            <div className="flex items-center gap-3">
+                                                <Users className="w-5 h-5 text-blue-600" />
+                                                <div>
+                                                    <div className="font-semibold text-gray-900">Assignments</div>
+                                                    <div className="text-lg font-bold text-blue-600">{test.assignment_count || 0} assigned</div>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
 
-                                {/* Question Type Distribution */}
+                                {/* Statistics Section */}
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                    {/* Question Type Distribution */}
                                     <div className="bg-gray-50 p-6 rounded-xl border border-gray-200">
-                                        <h3 className="text-xl font-bold text-gray-900 mb-4">Question Types</h3>
+                                        <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-3">
+                                            <FileText className="w-6 h-6 text-indigo-600" />
+                                            Question Types
+                                        </h3>
                                         <div className="space-y-3">
                                             {Object.entries(test.statistics?.questionTypes || {}).map(([type, count]) => {
                                                 const typeInfo = getQuestionTypeInfo(type);
                                                 const IconComponent = typeInfo.icon;
                                                 const percentage = ((count / test.statistics.totalQuestions) * 100).toFixed(1);
-                                                
+
                                                 return (
                                                     <div key={type} className="flex items-center justify-between p-3 bg-white rounded-lg border">
                                                         <div className="flex items-center gap-3">
@@ -349,11 +540,14 @@ export default function TestDetailsPage() {
 
                                     {/* Difficulty Distribution */}
                                     <div className="bg-gray-50 p-6 rounded-xl border border-gray-200">
-                                        <h3 className="text-xl font-bold text-gray-900 mb-4">Difficulty Levels</h3>
+                                        <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-3">
+                                            <BarChart3 className="w-6 h-6 text-indigo-600" />
+                                            Difficulty Levels
+                                        </h3>
                                         <div className="space-y-3">
                                             {Object.entries(test.statistics?.difficultyLevels || {}).map(([level, count]) => {
                                                 const percentage = ((count / test.statistics.totalQuestions) * 100).toFixed(1);
-                                                
+
                                                 return (
                                                     <div key={level} className="flex items-center justify-between p-3 bg-white rounded-lg border">
                                                         <div className="flex items-center gap-3">
@@ -372,26 +566,17 @@ export default function TestDetailsPage() {
                                     </div>
                                 </div>
 
-                                {/* Proctoring Settings */}
-                                {test.is_proctored && (
-                                    <div className="mt-8 bg-blue-50 p-6 rounded-xl border border-blue-200">
+                                {/* Instructions Section */}
+                                {test.instructions && (
+                                    <div className="mt-8 bg-gray-50 p-6 rounded-xl border border-gray-200">
                                         <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-3">
-                                            <Shield className="w-6 h-6 text-blue-600" />
-                                            Proctoring Settings
+                                            <FileText className="w-6 h-6 text-indigo-600" />
+                                            Candidate Instructions
                                         </h3>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            {Object.entries(test.proctoring_settings || {}).map(([key, value]) => (
-                                                <div key={key} className="flex items-center justify-between p-3 bg-white rounded-lg border">
-                                                    <span className="font-medium text-gray-900 capitalize">
-                                                        {key.replace(/_/g, ' ')}
-                                                    </span>
-                                                    <span className={`px-2 py-1 rounded text-sm font-semibold ${
-                                                        value ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                                                    }`}>
-                                                        {value ? 'Enabled' : 'Disabled'}
-                                                    </span>
-                                                </div>
-                                            ))}
+                                        <div className="bg-white p-4 rounded-lg border border-gray-200">
+                                            <pre className="whitespace-pre-wrap text-gray-700 text-sm leading-relaxed">
+                                                {test.instructions}
+                                            </pre>
                                         </div>
                                     </div>
                                 )}
@@ -413,14 +598,6 @@ export default function TestDetailsPage() {
                                         <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                                         <h3 className="text-lg font-semibold text-gray-900 mb-2">No Questions Added</h3>
                                         <p className="text-gray-600 mb-6">This test doesn't have any questions yet.</p>
-                                        {canEdit && (
-                                            <button
-                                                onClick={() => router.push(`/organization/create-test?edit=${test.id}`)}
-                                                className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
-                                            >
-                                                Add Questions
-                                            </button>
-                                        )}
                                     </div>
                                 ) : (
                                     <div className="space-y-6">
@@ -432,7 +609,7 @@ export default function TestDetailsPage() {
                                             return (
                                                 <div key={question.id} className="border-2 border-gray-200 rounded-xl overflow-hidden">
                                                     {/* Question Header */}
-                                                    <div 
+                                                    <div
                                                         className="bg-white p-6 cursor-pointer hover:bg-gray-50 transition-colors"
                                                         onClick={() => toggleQuestionExpansion(question.id)}
                                                     >
@@ -480,22 +657,20 @@ export default function TestDetailsPage() {
                                                                     <h4 className="font-semibold text-gray-900 mb-3">Options:</h4>
                                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                                                         {Object.entries(question.options).map(([key, value]) => {
-                                                                            const isCorrect = question.question_type === 'mcq_single' 
+                                                                            const isCorrect = question.question_type === 'mcq_single'
                                                                                 ? question.correct_answer === key
                                                                                 : question.correct_options?.includes(key);
-                                                                            
+
                                                                             return (
-                                                                                <div key={key} className={`p-3 rounded-lg border-2 ${
-                                                                                    isCorrect
-                                                                                        ? 'border-green-500 bg-green-50'
-                                                                                        : 'border-gray-200 bg-white'
-                                                                                }`}>
+                                                                                <div key={key} className={`p-3 rounded-lg border-2 ${isCorrect
+                                                                                    ? 'border-green-500 bg-green-50'
+                                                                                    : 'border-gray-200 bg-white'
+                                                                                    }`}>
                                                                                     <div className="flex items-center gap-3">
-                                                                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-semibold ${
-                                                                                            isCorrect
-                                                                                                ? 'bg-green-500 text-white'
-                                                                                                : 'bg-gray-100 text-gray-700'
-                                                                                        }`}>
+                                                                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-semibold ${isCorrect
+                                                                                            ? 'bg-green-500 text-white'
+                                                                                            : 'bg-gray-100 text-gray-700'
+                                                                                            }`}>
                                                                                             {key}
                                                                                         </div>
                                                                                         <span className="flex-1">{value}</span>
@@ -541,105 +716,11 @@ export default function TestDetailsPage() {
                             </div>
                         )}
 
-                        {/* Settings Tab */}
-                        {activeTab === 'settings' && (
-                            <div className="p-6 lg:p-8">
-                                <h2 className="text-2xl lg:text-3xl font-bold text-gray-900 mb-6">Test Settings</h2>
-                                
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                    {/* Basic Settings */}
-                                    <div className="space-y-6">
-                                        <h3 className="text-xl font-bold text-gray-900">Basic Information</h3>
-                                        
-                                        <div className="bg-gray-50 p-6 rounded-xl border border-gray-200">
-                                            <div className="space-y-4">
-                                                <div>
-                                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Duration</label>
-                                                    <div className="flex items-center gap-2 text-gray-900">
-                                                        <Clock className="w-5 h-5" />
-                                                        <span>{test.duration_minutes} minutes</span>
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Passing Marks</label>
-                                                    <div className="flex items-center gap-2 text-gray-900">
-                                                        <Star className="w-5 h-5" />
-                                                        <span>{test.passing_marks}%</span>
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Status</label>
-                                                    <span className={`px-3 py-1 rounded-full text-sm font-semibold border ${
-                                                        test.is_active 
-                                                            ? 'bg-green-100 text-green-800 border-green-200' 
-                                                            : 'bg-gray-100 text-gray-800 border-gray-200'
-                                                    }`}>
-                                                        {test.is_active ? 'Active' : 'Inactive'}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Security Settings */}
-                                    <div className="space-y-6">
-                                        <h3 className="text-xl font-bold text-gray-900">Security & Access</h3>
-                                        
-                                        <div className="bg-gray-50 p-6 rounded-xl border border-gray-200">
-                                            <div className="space-y-4">
-                                                <div className="flex items-center justify-between">
-                                                    <div>
-                                                        <div className="font-semibold text-gray-900">Proctoring</div>
-                                                        <div className="text-sm text-gray-600">Monitor test-taking session</div>
-                                                    </div>
-                                                    <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-                                                        test.is_proctored 
-                                                            ? 'bg-blue-100 text-blue-800' 
-                                                            : 'bg-gray-100 text-gray-800'
-                                                    }`}>
-                                                        {test.is_proctored ? 'Enabled' : 'Disabled'}
-                                                    </span>
-                                                </div>
-                                                
-                                                {test.is_proctored && (
-                                                    <div className="pt-4 border-t border-gray-200">
-                                                        <div className="text-sm font-semibold text-gray-900 mb-2">Proctoring Features:</div>
-                                                        <div className="space-y-2">
-                                                            {Object.entries(test.proctoring_settings || {}).map(([key, value]) => (
-                                                                <div key={key} className="flex items-center justify-between text-sm">
-                                                                    <span className="text-gray-600 capitalize">{key.replace(/_/g, ' ')}</span>
-                                                                    <span className={value ? 'text-green-600' : 'text-gray-400'}>
-                                                                        {value ? '✓' : '✗'}
-                                                                    </span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Instructions */}
-                                {test.instructions && (
-                                    <div className="mt-8">
-                                        <h3 className="text-xl font-bold text-gray-900 mb-4">Candidate Instructions</h3>
-                                        <div className="bg-gray-50 p-6 rounded-xl border border-gray-200">
-                                            <pre className="whitespace-pre-wrap text-gray-700">
-                                                {test.instructions}
-                                            </pre>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
                         {/* Analytics Tab */}
                         {activeTab === 'analytics' && (
                             <div className="p-6 lg:p-8">
                                 <h2 className="text-2xl lg:text-3xl font-bold text-gray-900 mb-6">Test Analytics</h2>
-                                
+
                                 <div className="text-center py-12">
                                     <BarChart3 className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                                     <h3 className="text-lg font-semibold text-gray-900 mb-2">Analytics Coming Soon</h3>
@@ -657,7 +738,75 @@ export default function TestDetailsPage() {
                     </div>
                 </div>
             </div>
+
             <Footer />
+
+            {/* Confirmation Modal */}
+            {isModalOpen && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className={`p-2 rounded-lg ${modalData.type === 'deactivate'
+                                ? 'bg-red-100 text-red-600'
+                                : 'bg-green-100 text-green-600'
+                                }`}>
+                                {modalData.type === 'deactivate' ? (
+                                    <AlertTriangle className="w-6 h-6" />
+                                ) : (
+                                    <CheckCircle className="w-6 h-6" />
+                                )}
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-900">
+                                {modalData.type === 'deactivate' ? 'Deactivate Test' : 'Reactivate Test'}
+                            </h3>
+                        </div>
+
+                        <div className="mb-6">
+                            <p className="text-gray-600 mb-4">
+                                {modalData.type === 'deactivate'
+                                    ? `Are you sure you want to deactivate "${modalData.testTitle}"?`
+                                    : `Are you sure you want to reactivate "${modalData.testTitle}"?`
+                                }
+                            </p>
+                            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                <p className="text-sm text-gray-600">
+                                    {modalData.type === 'deactivate'
+                                        ? 'The test will be hidden from assignment options but can be reactivated later.'
+                                        : 'The test will become available for assignments again.'
+                                    }
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3 justify-end">
+                            <button
+                                onClick={closeModal}
+                                disabled={deactivateLoading || reactivateLoading}
+                                className="cursor-pointer px-4 py-2 text-gray-600 hover:text-gray-800 font-medium disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleModalConfirm}
+                                disabled={deactivateLoading || reactivateLoading}
+                                className={`cursor-pointer px-6 py-2 text-white rounded-lg font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${modalData.type === 'deactivate'
+                                    ? 'bg-red-600 hover:bg-red-700'
+                                    : 'bg-green-600 hover:bg-green-700'
+                                    }`}
+                            >
+                                {(deactivateLoading || reactivateLoading) ? (
+                                    <div className="flex items-center gap-2">
+                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                        {modalData.type === 'deactivate' ? 'Deactivating...' : 'Reactivating...'}
+                                    </div>
+                                ) : (
+                                    modalData.type === 'deactivate' ? 'Deactivate Test' : 'Reactivate Test'
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </>
     );
-}f
+}

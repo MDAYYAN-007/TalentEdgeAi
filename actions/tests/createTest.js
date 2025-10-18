@@ -1,21 +1,30 @@
+// actions/tests/createTest.js
 'use server';
 
 import { query } from '@/actions/db';
 
-export async function createTest(testData, questions, authData) {
+export async function createTest(testData, questions, authData, allowedUsers = []) {
     try {
         await query('BEGIN');
 
         // Calculate total marks
         const totalMarks = questions.reduce((sum, question) => sum + parseInt(question.marks), 0);
 
+        // Prepare allowed users array - always include creator and OrgAdmin by default
+        const defaultAllowedUsers = [
+            authData.userId,
+        ];
+
+        const finalAllowedUsers = [...new Set([...defaultAllowedUsers, ...allowedUsers])];
+
         // Insert test
         const testSql = `
             INSERT INTO tests (
                 org_id, created_by, title, description, 
-                duration_minutes, total_marks, passing_marks, 
-                is_proctored, proctoring_settings, instructions
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                duration_minutes, total_marks, passing_marks,
+                instructions,
+                allowed_users
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING *
         `;
 
@@ -27,18 +36,15 @@ export async function createTest(testData, questions, authData) {
             testData.durationMinutes,
             totalMarks,
             testData.passingMarks,
-            testData.isProctored || false,
-            JSON.stringify(testData.proctoringSettings || {}), // Convert to JSON string
-            testData.instructions
+            testData.instructions,
+            JSON.stringify(finalAllowedUsers)
         ]);
 
         const test = testResult.rows[0];
 
-        // Insert questions
+        // Insert questions (your existing code remains the same)
         for (let i = 0; i < questions.length; i++) {
             const question = questions[i];
-
-            // Prepare JSON data for database
             const optionsJson = question.options ? JSON.stringify(question.options) : null;
             const correctOptionsJson = question.correctOptions ? JSON.stringify(question.correctOptions) : null;
 
@@ -56,9 +62,9 @@ export async function createTest(testData, questions, authData) {
                 question.questionText,
                 question.questionImageUrl || null,
                 question.marks,
-                optionsJson, // Use the JSON string
+                optionsJson,
                 question.correctAnswer || null,
-                correctOptionsJson, // Use the JSON string
+                correctOptionsJson,
                 question.explanation || null,
                 question.difficultyLevel || 'medium',
                 i

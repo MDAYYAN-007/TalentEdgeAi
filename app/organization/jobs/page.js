@@ -417,7 +417,7 @@ export default function JobsPage() {
                                         </div>
                                     </div>
                                     <Link
-                                        href={`/organization/job/${job.id}`}
+                                        href={`/organization/jobs/${job.id}`}
                                         className="flex items-center gap-1 px-4 py-2 cursor-pointer bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm"
                                     >
                                         View Details

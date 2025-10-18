@@ -11,14 +11,13 @@ import { Users, ArrowLeft, Eye, FileText, Loader2 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import { getRecruiters } from '@/actions/jobs/getRecruiters';
 import { updateJobRecruiters } from '@/actions/jobs/updateJobRecruiters';
+import { getJobApplicationStats } from '@/actions/applications/getJobApplicationStats';
 
 export default function OrganizationJobDetailPage() {
     const params = useParams();
     const router = useRouter();
     const jobId = params.jobId;
-
     const [job, setJob] = useState(null);
-    const [applications, setApplications] = useState([]);
     const [user, setUser] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isAuthorizedRecruiter, setIsAuthorizedRecruiter] = useState(false);
@@ -32,6 +31,16 @@ export default function OrganizationJobDetailPage() {
     // Modal states
     const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
     const [pendingStatus, setPendingStatus] = useState(null);
+
+    const [applicationStats, setApplicationStats] = useState({
+        total: 0,
+        shortlisted: 0,
+        test_assigned: 0,
+        interview_scheduled: 0,
+        waiting_for_result: 0,
+        accepted: 0,
+        rejected: 0
+    });
 
     useEffect(() => {
         const token = localStorage.getItem('token');
@@ -81,8 +90,6 @@ export default function OrganizationJobDetailPage() {
                     result.job
                 );
 
-
-                // Check if user is authorized to view applications
                 const isRecruiter = result.job.assigned_recruiters?.includes(parseInt(userData.id));
                 const isOwner = result.job.posted_by === userData.id;
                 const isOrgMember = result.job.org_id === userData.orgId;
@@ -91,41 +98,15 @@ export default function OrganizationJobDetailPage() {
                 setIsJobOwner(isOwner);
 
                 if (!isOrgMember) {
-                    // Redirect to public job page if not from same organization
                     router.push(`/jobs/${jobId}`);
                     return;
                 }
 
-                // For now, use dummy applications data
-                setApplications([
-                    {
-                        id: 1,
-                        candidate_name: 'John Doe',
-                        candidate_email: 'john.doe@email.com',
-                        applied_at: new Date().toISOString(),
-                        status: 'pending',
-                        resume_url: '/resumes/john-doe.pdf',
-                        cover_letter: 'I am very interested in this position...'
-                    },
-                    {
-                        id: 2,
-                        candidate_name: 'Jane Smith',
-                        candidate_email: 'jane.smith@email.com',
-                        applied_at: new Date().toISOString(),
-                        status: 'approved',
-                        resume_url: '/resumes/jane-smith.pdf',
-                        cover_letter: 'My experience aligns perfectly...'
-                    },
-                    {
-                        id: 3,
-                        candidate_name: 'Mike Johnson',
-                        candidate_email: 'mike.johnson@email.com',
-                        applied_at: new Date().toISOString(),
-                        status: 'rejected',
-                        resume_url: '/resumes/mike-johnson.pdf',
-                        cover_letter: 'I believe I would be a great fit...'
-                    }
-                ]);
+                if (isRecruiter || isOwner || userData.role === 'OrgAdmin') {
+                    const stats = await fetchApplicationStats(jobId, userData);
+                    setApplicationStats(stats);
+                }
+
             } else {
                 console.warn('Job not found');
                 router.push('/organization/jobs');
@@ -155,6 +136,27 @@ export default function OrganizationJobDetailPage() {
             console.error('Error fetching recruiters:', error);
         }
     };
+
+    const fetchApplicationStats = async (jobId, authData) => {
+        try {
+            const data = await getJobApplicationStats(jobId);
+            console.log(data)
+            return data;
+        } catch (error) {
+            console.error('Error fetching application stats:', error);
+            return getDefaultStats();
+        }
+    };
+
+    const getDefaultStats = () => ({
+        total: 0,
+        shortlisted: 0,
+        test_assigned: 0,
+        interview_scheduled: 0,
+        waiting_for_result: 0,
+        accepted: 0,
+        rejected: 0
+    });
 
     const openStatusModal = (newStatus) => {
         setPendingStatus(newStatus);
@@ -241,16 +243,6 @@ export default function OrganizationJobDetailPage() {
         }
     };
 
-    const handleViewApplication = (applicationId) => {
-        // Navigate to application details page or show modal
-        console.log('View application:', applicationId);
-        // For now, we'll show an alert with application details
-        const application = applications.find(app => app.id === applicationId);
-        if (application) {
-            alert(`Application Details:\n\nName: ${application.candidate_name}\nEmail: ${application.candidate_email}\nStatus: ${application.status}\nCover Letter: ${application.cover_letter}`);
-        }
-    };
-
     if (isLoading) {
         return (
             <>
@@ -320,11 +312,11 @@ export default function OrganizationJobDetailPage() {
                                     {/* Action Buttons */}
                                     <div className="flex gap-2">
                                         <button
-                                            onClick={() => router.push(`/jobs/${jobId}`)}
+                                            onClick={() => router.push(`/organization/jobs/${jobId}/applications`)}
                                             className="flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-lg hover:bg-indigo-700 hover:text-white cursor-pointer"
                                         >
                                             <Eye className="w-4 h-4" />
-                                            View Public
+                                            View Applications
                                         </button>
                                         <button
                                             onClick={() => router.push('/organization/jobs')}
@@ -393,53 +385,93 @@ export default function OrganizationJobDetailPage() {
 
                     {/* Quick Stats */}
                     {canManageJob && (
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                            <div className="bg-white p-4 rounded-xl border border-slate-200">
+                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
+                            {/* Total Applications */}
+                            <div className="bg-white p-4 rounded-xl border border-slate-200 hover:shadow-md transition-shadow">
                                 <div className="flex items-center gap-3">
                                     <div className="p-2 bg-blue-100 rounded-lg">
                                         <Users className="w-5 h-5 text-blue-600" />
                                     </div>
                                     <div>
-                                        <p className="text-2xl font-bold text-slate-900">{applications.length}</p>
-                                        <p className="text-sm text-slate-600">Total Applications</p>
+                                        <p className="text-2xl font-bold text-slate-900">{applicationStats.total}</p>
+                                        <p className="text-sm text-slate-600">Total</p>
                                     </div>
                                 </div>
                             </div>
-                            <div className="bg-white p-4 rounded-xl border border-slate-200">
+
+                            {/* Shortlisted */}
+                            <div className="bg-white p-4 rounded-xl border border-slate-200 hover:shadow-md transition-shadow">
                                 <div className="flex items-center gap-3">
-                                    <div className="p-2 bg-green-100 rounded-lg">
-                                        <Users className="w-5 h-5 text-green-600" />
+                                    <div className="p-2 bg-purple-100 rounded-lg">
+                                        <Users className="w-5 h-5 text-purple-600" />
                                     </div>
                                     <div>
-                                        <p className="text-2xl font-bold text-slate-900">
-                                            {applications.filter(app => app.status === 'approved').length}
-                                        </p>
-                                        <p className="text-sm text-slate-600">Approved</p>
+                                        <p className="text-2xl font-bold text-slate-900">{applicationStats.shortlisted}</p>
+                                        <p className="text-sm text-slate-600">Shortlisted</p>
                                     </div>
                                 </div>
                             </div>
-                            <div className="bg-white p-4 rounded-xl border border-slate-200">
+
+                            {/* Test Assigned */}
+                            <div className="bg-white p-4 rounded-xl border border-slate-200 hover:shadow-md transition-shadow">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-indigo-100 rounded-lg">
+                                        <Users className="w-5 h-5 text-indigo-600" />
+                                    </div>
+                                    <div>
+                                        <p className="text-2xl font-bold text-slate-900">{applicationStats.test_assigned}</p>
+                                        <p className="text-sm text-slate-600">Test Assigned</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Interview Scheduled */}
+                            <div className="bg-white p-4 rounded-xl border border-slate-200 hover:shadow-md transition-shadow">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-orange-100 rounded-lg">
+                                        <Users className="w-5 h-5 text-orange-600" />
+                                    </div>
+                                    <div>
+                                        <p className="text-2xl font-bold text-slate-900">{applicationStats.interview_scheduled}</p>
+                                        <p className="text-sm text-slate-600">Interview</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Waiting for Result */}
+                            <div className="bg-white p-4 rounded-xl border border-slate-200 hover:shadow-md transition-shadow">
                                 <div className="flex items-center gap-3">
                                     <div className="p-2 bg-yellow-100 rounded-lg">
                                         <Users className="w-5 h-5 text-yellow-600" />
                                     </div>
                                     <div>
-                                        <p className="text-2xl font-bold text-slate-900">
-                                            {applications.filter(app => app.status === 'pending').length}
-                                        </p>
-                                        <p className="text-sm text-slate-600">Pending</p>
+                                        <p className="text-2xl font-bold text-slate-900">{applicationStats.waiting_for_result}</p>
+                                        <p className="text-sm text-slate-600">Waiting Result</p>
                                     </div>
                                 </div>
                             </div>
-                            <div className="bg-white p-4 rounded-xl border border-slate-200">
+
+                            {/* Accepted */}
+                            <div className="bg-white p-4 rounded-xl border border-slate-200 hover:shadow-md transition-shadow">
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-green-100 rounded-lg">
+                                        <Users className="w-5 h-5 text-green-600" />
+                                    </div>
+                                    <div>
+                                        <p className="text-2xl font-bold text-slate-900">{applicationStats.accepted}</p>
+                                        <p className="text-sm text-slate-600">Accepted</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Rejected */}
+                            <div className="bg-white p-4 rounded-xl border border-slate-200 hover:shadow-md transition-shadow">
                                 <div className="flex items-center gap-3">
                                     <div className="p-2 bg-red-100 rounded-lg">
                                         <Users className="w-5 h-5 text-red-600" />
                                     </div>
                                     <div>
-                                        <p className="text-2xl font-bold text-slate-900">
-                                            {applications.filter(app => app.status === 'rejected').length}
-                                        </p>
+                                        <p className="text-2xl font-bold text-slate-900">{applicationStats.rejected}</p>
                                         <p className="text-sm text-slate-600">Rejected</p>
                                     </div>
                                 </div>
@@ -447,7 +479,6 @@ export default function OrganizationJobDetailPage() {
                         </div>
                     )}
 
-                    {/* Tabs */}
                     {/* Tabs */}
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 mb-6">
                         <div className="border-b border-slate-200">
@@ -463,15 +494,6 @@ export default function OrganizationJobDetailPage() {
                                 </button>
                                 {canManageJob && (
                                     <>
-                                        <button
-                                            onClick={() => setActiveTab('applications')}
-                                            className={`py-4 px-6 cursor-pointer border-b-2 font-medium text-sm ${activeTab === 'applications'
-                                                ? 'border-indigo-600 text-indigo-600'
-                                                : 'border-transparent text-slate-600 hover:text-slate-900'
-                                                }`}
-                                        >
-                                            Applications ({applications.length})
-                                        </button>
                                         <button
                                             onClick={() => setActiveTab('access')}
                                             className={`py-4 px-6 cursor-pointer border-b-2 font-medium text-sm ${activeTab === 'access'
@@ -489,13 +511,6 @@ export default function OrganizationJobDetailPage() {
                         {/* Tab Content */}
                         <div className="p-6">
                             {activeTab === 'details' && <JobDetailsTab job={job} />}
-                            {activeTab === 'applications' && canManageJob && (
-                                <ApplicationsTab
-                                    applications={applications}
-                                    onViewApplication={handleViewApplication}
-                                    isJobClosed={isJobClosed}
-                                />
-                            )}
                             {activeTab === 'access' && canManageJob && (
                                 <GrantAccessTab
                                     job={job}
@@ -652,75 +667,6 @@ function JobDetailsTab({ job }) {
                     <p className="text-slate-700 whitespace-pre-wrap">{job.job_description}</p>
                 </div>
             )}
-        </div>
-    );
-}
-
-// Applications Tab Component (unchanged)
-function ApplicationsTab({ applications, onViewApplication, isJobClosed }) {
-    const handleApplicationAction = (applicationId, action) => {
-        console.log(`${action} application:`, applicationId);
-        // Add application action logic here
-    };
-
-    if (applications.length === 0) {
-        return (
-            <div className="text-center py-8">
-                <p className="text-slate-600">No applications received yet.</p>
-            </div>
-        );
-    }
-
-    return (
-        <div className="space-y-4">
-            {isJobClosed && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-                    <p className="text-yellow-800 text-sm">
-                        <strong>Note:</strong> This job is closed and no longer accepting new applications, but you can still manage existing applications.
-                    </p>
-                </div>
-            )}
-
-            {applications.map((application) => (
-                <div key={application.id} className="border border-slate-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                    <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                            <h4 className="font-semibold text-slate-900">{application.candidate_name}</h4>
-                            <p className="text-slate-600 text-sm">{application.candidate_email}</p>
-                            <p className="text-slate-500 text-sm mt-1">Applied on: {new Date(application.applied_at).toLocaleDateString()}</p>
-                        </div>
-                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${application.status === 'approved' ? 'bg-green-100 text-green-800' :
-                            application.status === 'rejected' ? 'bg-red-100 text-red-800' :
-                                'bg-yellow-100 text-yellow-800'
-                            }`}>
-                            {application.status}
-                        </span>
-                    </div>
-
-                    {/* Application actions */}
-                    <div className="flex gap-2 mt-3">
-                        <button
-                            onClick={() => onViewApplication(application.id)}
-                            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm"
-                        >
-                            <FileText className="w-4 h-4" />
-                            View Application
-                        </button>
-                        <button
-                            onClick={() => handleApplicationAction(application.id, 'approve')}
-                            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
-                        >
-                            Approve
-                        </button>
-                        <button
-                            onClick={() => handleApplicationAction(application.id, 'reject')}
-                            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm"
-                        >
-                            Reject
-                        </button>
-                    </div>
-                </div>
-            ))}
         </div>
     );
 }

@@ -9,7 +9,7 @@ export async function getTestDetails(testId, authData) {
         const testSql = `
             SELECT 
                 t.*,
-                u.name as created_by_name,
+                CONCAT(u.first_name, ' ', u.last_name) as created_by_name,
                 u.email as created_by_email,
                 COUNT(tq.id) as question_count,
                 COUNT(ta.id) as assignment_count
@@ -18,7 +18,7 @@ export async function getTestDetails(testId, authData) {
             LEFT JOIN test_questions tq ON t.id = tq.test_id
             LEFT JOIN test_assignments ta ON t.id = ta.test_id
             WHERE t.id = $1 AND t.org_id = $2
-            GROUP BY t.id, u.name, u.email
+            GROUP BY t.id, u.first_name, u.last_name, u.email
         `;
 
         const testResult = await query(testSql, [testId, authData.orgId]);
