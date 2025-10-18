@@ -25,7 +25,7 @@ export async function submitApplication(applicationData) {
         const insertSql = `
             INSERT INTO applications 
             (job_id, applicant_id, application_data, cover_letter, resume_score, ai_feedback, ai_score_breakdown, ai_improvement_suggestions, status)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'submitted')
             RETURNING id, applied_at
         `;
 
@@ -52,6 +52,22 @@ export async function submitApplication(applicationData) {
         ];
 
         const result = await query(insertSql, values);
+        const applicationId = result.rows[0].id;
+
+        // Log the initial submission to application_status_history
+        const historySql = `
+            INSERT INTO application_status_history 
+            (application_id, old_status, new_status, performed_by, notes)
+            VALUES ($1, $2, $3, $4, $5)
+        `;
+
+        await query(historySql, [
+            applicationId,
+            null, // old_status is null for initial submission
+            'submitted', // new_status
+            applicantId, // performed_by is the applicant who submitted
+            `Application submitted by ${appData.basic?.name || 'candidate'}`
+        ]);
 
         return {
             success: true,

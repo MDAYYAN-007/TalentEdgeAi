@@ -83,13 +83,19 @@ export default function ApplicationsPage() {
 
     const getStatusIcon = (status) => {
         switch (status) {
-            case 'accepted':
+            case 'hired':
                 return <CheckCircle className="w-4 h-4 text-green-500" />;
             case 'rejected':
                 return <XCircle className="w-4 h-4 text-red-500" />;
-            case 'interview':
-                return <Clock4 className="w-4 h-4 text-blue-500" />;
-            case 'pending':
+            case 'interview_scheduled':
+                return <Video className="w-4 h-4 text-purple-500" />;
+            case 'test_scheduled':
+                return <Zap className="w-4 h-4 text-blue-500" />;
+            case 'shortlisted':
+                return <Star className="w-4 h-4 text-indigo-500" />;
+            case 'waiting_for_result':
+                return <Clock className="w-4 h-4 text-orange-500" />;
+            case 'submitted':
                 return <Clock className="w-4 h-4 text-yellow-500" />;
             default:
                 return <AlertCircle className="w-4 h-4 text-gray-500" />;
@@ -98,13 +104,19 @@ export default function ApplicationsPage() {
 
     const getStatusColor = (status) => {
         switch (status) {
-            case 'accepted':
+            case 'hired':
                 return 'bg-green-100 text-green-800 border-green-200';
             case 'rejected':
                 return 'bg-red-100 text-red-800 border-red-200';
-            case 'interview':
+            case 'interview_scheduled':
+                return 'bg-purple-100 text-purple-800 border-purple-200';
+            case 'test_scheduled':
                 return 'bg-blue-100 text-blue-800 border-blue-200';
-            case 'pending':
+            case 'shortlisted':
+                return 'bg-indigo-100 text-indigo-800 border-indigo-200';
+            case 'waiting_for_result':
+                return 'bg-orange-100 text-orange-800 border-orange-200';
+            case 'submitted':
                 return 'bg-yellow-100 text-yellow-800 border-yellow-200';
             default:
                 return 'bg-gray-100 text-gray-800 border-gray-200';
@@ -120,9 +132,12 @@ export default function ApplicationsPage() {
 
     const stats = {
         total: applications.length,
-        pending: applications.filter(app => app.status === 'pending').length,
-        interview: applications.filter(app => app.status === 'interview').length,
-        accepted: applications.filter(app => app.status === 'accepted').length,
+        submitted: applications.filter(app => app.status === 'submitted').length,
+        shortlisted: applications.filter(app => app.status === 'shortlisted').length,
+        test_scheduled: applications.filter(app => app.status === 'test_scheduled').length,
+        interview_scheduled: applications.filter(app => app.status === 'interview_scheduled').length,
+        waiting_for_result: applications.filter(app => app.status === 'waiting_for_result').length,
+        hired: applications.filter(app => app.status === 'hired').length,
         rejected: applications.filter(app => app.status === 'rejected').length,
         averageScore: applications.length > 0
             ? Math.round(applications.reduce((sum, app) => sum + (app.resumeScore || 0), 0) / applications.length)
@@ -174,30 +189,39 @@ export default function ApplicationsPage() {
                     </div>
 
                     {/* Stats Overview */}
-                    <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-8">
+                    {/* Stats Overview */}
+                    <div className="grid grid-cols-2 md:grid-cols-8 gap-4 mb-8">
                         <div className="bg-white rounded-xl shadow-md border border-slate-200 p-4 text-center">
                             <div className="text-2xl font-bold text-slate-900">{stats.total}</div>
                             <div className="text-sm text-slate-600">Total</div>
                         </div>
                         <div className="bg-white rounded-xl shadow-md border border-yellow-200 p-4 text-center">
-                            <div className="text-2xl font-bold text-yellow-600">{stats.pending}</div>
-                            <div className="text-sm text-slate-600">Pending</div>
+                            <div className="text-2xl font-bold text-yellow-600">{stats.submitted}</div>
+                            <div className="text-sm text-slate-600">Submitted</div>
+                        </div>
+                        <div className="bg-white rounded-xl shadow-md border border-indigo-200 p-4 text-center">
+                            <div className="text-2xl font-bold text-indigo-600">{stats.shortlisted}</div>
+                            <div className="text-sm text-slate-600">Shortlisted</div>
                         </div>
                         <div className="bg-white rounded-xl shadow-md border border-blue-200 p-4 text-center">
-                            <div className="text-2xl font-bold text-blue-600">{stats.interview}</div>
+                            <div className="text-2xl font-bold text-blue-600">{stats.test_scheduled}</div>
+                            <div className="text-sm text-slate-600">Test Scheduled</div>
+                        </div>
+                        <div className="bg-white rounded-xl shadow-md border border-purple-200 p-4 text-center">
+                            <div className="text-2xl font-bold text-purple-600">{stats.interview_scheduled}</div>
                             <div className="text-sm text-slate-600">Interview</div>
                         </div>
+                        <div className="bg-white rounded-xl shadow-md border border-orange-200 p-4 text-center">
+                            <div className="text-2xl font-bold text-orange-600">{stats.waiting_for_result}</div>
+                            <div className="text-sm text-slate-600">Waiting Result</div>
+                        </div>
                         <div className="bg-white rounded-xl shadow-md border border-green-200 p-4 text-center">
-                            <div className="text-2xl font-bold text-green-600">{stats.accepted}</div>
-                            <div className="text-sm text-slate-600">Accepted</div>
+                            <div className="text-2xl font-bold text-green-600">{stats.hired}</div>
+                            <div className="text-sm text-slate-600">Hired</div>
                         </div>
                         <div className="bg-white rounded-xl shadow-md border border-red-200 p-4 text-center">
                             <div className="text-2xl font-bold text-red-600">{stats.rejected}</div>
                             <div className="text-sm text-slate-600">Rejected</div>
-                        </div>
-                        <div className="bg-white rounded-xl shadow-md border border-purple-200 p-4 text-center">
-                            <div className="text-2xl font-bold text-purple-600">{stats.averageScore}%</div>
-                            <div className="text-sm text-slate-600">Avg Score</div>
                         </div>
                     </div>
 
@@ -226,13 +250,16 @@ export default function ApplicationsPage() {
                                     className="px-4 py-3 border-2 border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition-all"
                                 >
                                     <option value="all">All Status</option>
-                                    <option value="pending">Pending</option>
-                                    <option value="interview">Interview</option>
-                                    <option value="accepted">Accepted</option>
+                                    <option value="submitted">Submitted</option>
+                                    <option value="shortlisted">Shortlisted</option>
+                                    <option value="test_scheduled">Test Scheduled</option>
+                                    <option value="interview_scheduled">Interview Scheduled</option>
+                                    <option value="waiting_for_result">Waiting for Result</option>
+                                    <option value="hired">Hired</option>
                                     <option value="rejected">Rejected</option>
                                 </select>
 
-                                {/* Sort By */}
+                                {/* Sort By - keep as is */}
                                 <select
                                     value={sortBy}
                                     onChange={(e) => setSortBy(e.target.value)}
@@ -358,7 +385,7 @@ export default function ApplicationsPage() {
                                                 className="flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 cursor-pointer text-sm font-medium"
                                             >
                                                 <FileText className="w-4 h-4" />
-                                                View Details
+                                                View Application
                                             </Link>
                                         </div>
                                     </div>

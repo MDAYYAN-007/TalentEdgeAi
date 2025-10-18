@@ -65,14 +65,20 @@ export default function ApplicationDetailsPage() {
 
     const getStatusIcon = (status) => {
         switch (status) {
-            case 'accepted':
+            case 'hired':
                 return <CheckCircle className="w-5 h-5 text-green-600" />;
             case 'rejected':
                 return <XCircle className="w-5 h-5 text-red-600" />;
-            case 'interview':
-                return <Clock4 className="w-5 h-5 text-blue-600" />;
-            case 'pending':
-                return <Clock className="w-5 h-5 text-amber-600" />;
+            case 'interview_scheduled':
+                return <Clock4 className="w-5 h-5 text-purple-600" />;
+            case 'test_scheduled':
+                return <Zap className="w-5 h-5 text-blue-600" />;
+            case 'shortlisted':
+                return <Star className="w-5 h-5 text-indigo-600" />;
+            case 'waiting_for_result':
+                return <Clock className="w-5 h-5 text-orange-600" />;
+            case 'submitted':
+                return <Clock className="w-5 h-5 text-yellow-600" />;
             default:
                 return <AlertCircle className="w-5 h-5 text-gray-500" />;
         }
@@ -80,14 +86,20 @@ export default function ApplicationDetailsPage() {
 
     const getStatusColor = (status) => {
         switch (status) {
-            case 'accepted':
+            case 'hired':
                 return 'bg-green-50 text-green-700 border-green-200';
             case 'rejected':
                 return 'bg-red-50 text-red-700 border-red-200';
-            case 'interview':
+            case 'interview_scheduled':
+                return 'bg-purple-50 text-purple-700 border-purple-200';
+            case 'test_scheduled':
                 return 'bg-blue-50 text-blue-700 border-blue-200';
-            case 'pending':
-                return 'bg-amber-50 text-amber-700 border-amber-200';
+            case 'shortlisted':
+                return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+            case 'waiting_for_result':
+                return 'bg-orange-50 text-orange-700 border-orange-200';
+            case 'submitted':
+                return 'bg-yellow-50 text-yellow-700 border-yellow-200';
             default:
                 return 'bg-gray-50 text-gray-700 border-gray-200';
         }
@@ -98,16 +110,6 @@ export default function ApplicationDetailsPage() {
         if (score >= 60) return 'text-blue-700 bg-blue-50 border-blue-200';
         if (score >= 40) return 'text-amber-700 bg-amber-50 border-amber-200';
         return 'text-red-700 bg-red-50 border-red-200';
-    };
-
-    const downloadApplication = () => {
-        const printContent = document.getElementById('application-content').innerHTML;
-        const originalContent = document.body.innerHTML;
-
-        document.body.innerHTML = printContent;
-        window.print();
-        document.body.innerHTML = originalContent;
-        window.location.reload();
     };
 
     if (isLoading) {
@@ -165,7 +167,7 @@ export default function ApplicationDetailsPage() {
                             </Link>
                         </div>
 
-                        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                        <div className="flex flex-col sm:flex-row lg:items-start lg:justify-between gap-6">
                             <div className="flex-1">
                                 <div className="flex items-center gap-3 mb-3">
                                     <div className="p-2 bg-indigo-100 rounded-lg">
@@ -173,11 +175,11 @@ export default function ApplicationDetailsPage() {
                                     </div>
                                     <span className="text-gray-700 font-semibold">{application.companyName}</span>
                                 </div>
-                                
+
                                 <h1 className="text-3xl font-bold text-gray-900 mb-4">
                                     {application.jobTitle}
                                 </h1>
-                                
+
                                 <div className="flex flex-wrap items-center gap-4 text-gray-600">
                                     <div className="flex items-center gap-2">
                                         <MapPin className="w-4 h-4" />
@@ -190,7 +192,7 @@ export default function ApplicationDetailsPage() {
                                 </div>
                             </div>
 
-                            <div className="flex flex-col gap-3">
+                            <div className="flex flex-row sm:flex-col gap-3">
                                 <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg border ${getStatusColor(application.status)}`}>
                                     {getStatusIcon(application.status)}
                                     <span className="font-medium capitalize">{application.status}</span>
@@ -210,33 +212,30 @@ export default function ApplicationDetailsPage() {
                         <div className="flex flex-wrap gap-2">
                             <button
                                 onClick={() => setActiveTab('overview')}
-                                className={`flex items-center gap-2 cursor-pointer px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
-                                    activeTab === 'overview'
-                                        ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                                }`}
+                                className={`flex items-center gap-2 cursor-pointer px-4 py-3 rounded-lg font-medium transition-all duration-200 ${activeTab === 'overview'
+                                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                                    }`}
                             >
                                 <Eye className="w-4 h-4" />
                                 Overview
                             </button>
                             <button
                                 onClick={() => setActiveTab('ai-analysis')}
-                                className={`flex items-center gap-2 cursor-pointer px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
-                                    activeTab === 'ai-analysis'
-                                        ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                                }`}
+                                className={`flex items-center gap-2 cursor-pointer px-4 py-3 rounded-lg font-medium transition-all duration-200 ${activeTab === 'ai-analysis'
+                                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                                    }`}
                             >
                                 <Target className="w-4 h-4" />
                                 AI Analysis
                             </button>
                             <button
                                 onClick={() => setActiveTab('application')}
-                                className={`flex items-center gap-2 cursor-pointer px-4 py-3 rounded-lg font-medium transition-all duration-200 ${
-                                    activeTab === 'application'
-                                        ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                                }`}
+                                className={`flex items-center gap-2 cursor-pointer px-4 py-3 rounded-lg font-medium transition-all duration-200 ${activeTab === 'application'
+                                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                                    }`}
                             >
                                 <FileText className="w-4 h-4" />
                                 Full Application
@@ -339,13 +338,12 @@ export default function ApplicationDetailsPage() {
                                         <div className="space-y-3">
                                             {application?.aiFeedback?.explanationList?.map((explanation, index) => (
                                                 <div key={index} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                                                    <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${
-                                                        explanation.toLowerCase().includes('exceed') ||
+                                                    <div className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${explanation.toLowerCase().includes('exceed') ||
                                                         explanation.toLowerCase().includes('solid') ||
                                                         explanation.toLowerCase().includes('strong') ||
                                                         explanation.toLowerCase().includes('align')
-                                                            ? 'bg-green-500' : 'bg-amber-500'
-                                                    }`}></div>
+                                                        ? 'bg-green-500' : 'bg-amber-500'
+                                                        }`}></div>
                                                     <p className="text-gray-700 text-sm leading-relaxed">{explanation}</p>
                                                 </div>
                                             ))}
@@ -389,33 +387,37 @@ export default function ApplicationDetailsPage() {
 
                                 <div>
                                     <h3 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                                        <User className="w-5 h-5 text-gray-600" />
+                                        <User className="w-5 h-5 text-blue-600" />
                                         Personal Information
                                     </h3>
-                                    <div className="bg-gray-50 rounded-lg p-6 border border-gray-200">
+                                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200">
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            <div>
-                                                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-                                                <p className="text-gray-900">{application.applicationData.basic.name}</p>
+                                            <div className="bg-white/70 rounded-lg p-4 border border-blue-100">
+                                                <label className="block text-sm font-medium text-blue-700 mb-1">Full Name</label>
+                                                <p className="text-gray-900 font-medium">{application.applicationData.basic.name}</p>
                                             </div>
-                                            <div>
-                                                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                                                <p className="text-gray-900">{application.applicationData.basic.email}</p>
+                                            <div className="bg-white/70 rounded-lg p-4 border border-blue-100">
+                                                <label className="block text-sm font-medium text-blue-700 mb-1">Email</label>
+                                                <p className="text-gray-900 font-medium">{application.applicationData.basic.email}</p>
                                             </div>
-                                            <div>
-                                                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                                                <p className="text-gray-900">{application.applicationData.basic.phone}</p>
+                                            <div className="bg-white/70 rounded-lg p-4 border border-blue-100">
+                                                <label className="block text-sm font-medium text-blue-700 mb-1">Phone</label>
+                                                <p className="text-gray-900 font-medium">{application.applicationData.basic.phone}</p>
                                             </div>
                                             {application.applicationData.basic.linkedinUrl && (
-                                                <div>
-                                                    <label className="block text-sm font-medium text-gray-700 mb-1">LinkedIn</label>
-                                                    <p className="text-gray-900">{application.applicationData.basic.linkedinUrl}</p>
+                                                <div className="bg-white/70 rounded-lg p-4 border border-blue-100">
+                                                    <label className="block text-sm font-medium text-blue-700 mb-1">LinkedIn</label>
+                                                    <a href={application.applicationData.basic.linkedinUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 font-medium hover:text-blue-700">
+                                                        View Profile
+                                                    </a>
                                                 </div>
                                             )}
                                             {application.applicationData.basic.portfolioUrl && (
-                                                <div>
-                                                    <label className="block text-sm font-medium text-gray-700 mb-1">Portfolio</label>
-                                                    <p className="text-gray-900">{application.applicationData.basic.portfolioUrl}</p>
+                                                <div className="bg-white/70 rounded-lg p-4 border border-blue-100">
+                                                    <label className="block text-sm font-medium text-blue-700 mb-1">Portfolio</label>
+                                                    <a href={application.applicationData.basic.portfolioUrl} target="_blank" rel="noopener noreferrer" className="text-indigo-600 font-medium hover:text-indigo-700">
+                                                        Visit Portfolio
+                                                    </a>
                                                 </div>
                                             )}
                                         </div>
@@ -425,12 +427,12 @@ export default function ApplicationDetailsPage() {
                                 {application.applicationData.skills && application.applicationData.skills.length > 0 && (
                                     <div>
                                         <h3 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                                            <Zap className="w-5 h-5 text-gray-600" />
+                                            <Zap className="w-5 h-5 text-amber-600" />
                                             Skills
                                         </h3>
-                                        <div className="flex flex-wrap gap-2">
+                                        <div className="flex flex-wrap gap-3">
                                             {application.applicationData.skills.map((skill, index) => (
-                                                <span key={index} className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium">
+                                                <span key={index} className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl text-sm font-semibold shadow-sm hover:shadow-md transition-all duration-200">
                                                     {skill}
                                                 </span>
                                             ))}
@@ -441,21 +443,21 @@ export default function ApplicationDetailsPage() {
                                 {application.applicationData.experiences && application.applicationData.experiences.length > 0 && (
                                     <div>
                                         <h3 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                                            <Briefcase className="w-5 h-5 text-gray-600" />
+                                            <Briefcase className="w-5 h-5 text-green-600" />
                                             Work Experience
                                         </h3>
                                         <div className="space-y-4">
                                             {application.applicationData.experiences.map((exp, index) => (
-                                                <div key={index} className="border-l-2 border-gray-300 pl-4 py-3">
-                                                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between mb-2">
-                                                        <h4 className="font-semibold text-gray-900">{exp.jobTitle}</h4>
-                                                        <span className="text-sm text-gray-600">
+                                                <div key={index} className="border-l-4 border-green-500 pl-6 py-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-r-xl hover:shadow-sm transition-all duration-200">
+                                                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between mb-3">
+                                                        <h4 className="font-bold text-gray-900 text-lg">{exp.jobTitle}</h4>
+                                                        <span className="text-sm text-gray-600 bg-white px-3 py-1 rounded-full font-medium border border-green-200">
                                                             {exp.duration}
                                                         </span>
                                                     </div>
-                                                    <p className="text-gray-700 font-medium mb-2">{exp.company}</p>
+                                                    <p className="text-gray-700 font-semibold mb-3 text-lg">{exp.company}</p>
                                                     {exp.description && (
-                                                        <p className="text-gray-600 text-sm leading-relaxed whitespace-pre-line">
+                                                        <p className="text-gray-600 leading-relaxed whitespace-pre-line bg-white/80 p-4 rounded-lg border border-green-100">
                                                             {exp.description}
                                                         </p>
                                                     )}
@@ -468,19 +470,23 @@ export default function ApplicationDetailsPage() {
                                 {application.applicationData.education && application.applicationData.education.length > 0 && (
                                     <div>
                                         <h3 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                                            <GraduationCap className="w-5 h-5 text-gray-600" />
+                                            <GraduationCap className="w-5 h-5 text-purple-600" />
                                             Education
                                         </h3>
                                         <div className="space-y-4">
                                             {application.applicationData.education.map((edu, index) => (
-                                                <div key={index} className="border-l-2 border-gray-300 pl-4 py-3">
+                                                <div key={index} className="border-l-4 border-purple-500 pl-6 py-4 bg-gradient-to-r from-purple-50 to-violet-50 rounded-r-xl hover:shadow-sm transition-all duration-200">
                                                     <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between mb-2">
-                                                        <h4 className="font-semibold text-gray-900">{edu.degree}</h4>
-                                                        <span className="text-sm text-gray-600">{edu.year}</span>
+                                                        <h4 className="font-bold text-gray-900 text-lg">{edu.degree}</h4>
+                                                        <span className="text-sm text-gray-600 bg-white px-3 py-1 rounded-full font-medium border border-purple-200">
+                                                            {edu.year}
+                                                        </span>
                                                     </div>
-                                                    <p className="text-gray-700 font-medium mb-1">{edu.institution}</p>
+                                                    <p className="text-gray-700 font-semibold mb-2 text-lg">{edu.institution}</p>
                                                     {edu.grade && (
-                                                        <p className="text-gray-600 text-sm">Grade: {edu.grade}</p>
+                                                        <p className="text-gray-600 font-medium bg-white/80 px-3 py-2 rounded-lg border border-purple-100 inline-block">
+                                                            Grade: {edu.grade}
+                                                        </p>
                                                     )}
                                                 </div>
                                             ))}
@@ -491,11 +497,11 @@ export default function ApplicationDetailsPage() {
                                 {application.coverLetter && (
                                     <div>
                                         <h3 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                                            <FileText className="w-5 h-5 text-gray-600" />
+                                            <FileText className="w-5 h-5 text-indigo-600" />
                                             Cover Letter
                                         </h3>
-                                        <div className="bg-gray-50 rounded-lg p-6 border border-gray-200">
-                                            <p className="text-gray-700 leading-relaxed whitespace-pre-line">
+                                        <div className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-xl p-6 border border-indigo-200">
+                                            <p className="text-gray-700 leading-relaxed whitespace-pre-line text-lg">
                                                 {application.coverLetter}
                                             </p>
                                         </div>
@@ -514,13 +520,6 @@ export default function ApplicationDetailsPage() {
                             <Eye className="w-4 h-4" />
                             View Job Posting
                         </Link>
-                        <button
-                            onClick={downloadApplication}
-                            className="flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors duration-200 cursor-pointer font-medium"
-                        >
-                            <Download className="w-4 h-4" />
-                            Download Application
-                        </button>
                     </div>
                 </div>
             </div>

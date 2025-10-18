@@ -28,13 +28,13 @@ export default function Dashboard() {
       setUser({
         name: decoded.name || 'User',
         email: decoded.email,
-        role: decoded.role || 'Candidate',
+        role: decoded.role || 'User',
         id: decoded.id,
         orgId: decoded.orgId
       });
 
       // Redirect non-candidate users to their respective dashboards
-      if (decoded.role && decoded.role !== 'Candidate' && decoded.role !== 'user') {
+      if (decoded.role &&  decoded.role !== 'User') {
         switch (decoded.role) {
           case 'HR':
           case 'SeniorHR':
