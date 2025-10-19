@@ -1,4 +1,3 @@
-// actions/applications/getRecruiterApplicationDetails.js
 'use server';
 
 import { query } from "@/actions/db";
@@ -25,10 +24,9 @@ export async function getRecruiterApplicationDetails(authData, applicationId) {
             JOIN users u ON a.applicant_id = u.id
             WHERE a.id = $1 
             AND j.org_id = $2 
-            AND $3 = ANY(j.assigned_recruiters)
         `;
 
-        const result = await query(sql, [applicationId, orgId, userId]);
+        const result = await query(sql, [applicationId, orgId]);
 
         if (result.rows.length === 0) {
             return { success: false, message: "Application not found or access denied" };

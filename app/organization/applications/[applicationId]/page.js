@@ -6,18 +6,27 @@ import { jwtDecode } from 'jwt-decode';
 import {
     ArrowLeft, Calendar, MapPin, Building, User, Star,
     CheckCircle, XCircle, Clock, FileText, Zap, Video,
-    Mail, Phone, Briefcase, GraduationCap, DollarSign,
+    Mail, AlertCircle, Briefcase, GraduationCap, DollarSign,
     Users, Target, BookOpen, Award, Clock4, Download,
-    Send, Eye, EyeOff
+    Send, Eye, EyeOff, Play, FileCheck, RefreshCw, X
 } from 'lucide-react';
 import { getRecruiterApplicationDetails } from '@/actions/applications/getRecruiterApplicationDetails';
 import { updateApplicationStatus } from '@/actions/applications/updateApplicationStatus';
 import { getJobDetails } from '@/actions/jobs/getJobDetails';
 import { getApplicationStatusHistory } from '@/actions/applications/getApplicationStatusHistory';
+import { getTestsForApplication } from '@/actions/tests/getTestsForApplication';
+import { rescheduleTest } from '@/actions/tests/rescheduleTest';
+import { rescheduleInterview } from '@/actions/interviews/rescheduleInterview';
+import { getOrganizationTests } from '@/actions/tests/getOrganizationTests';
 import Link from 'next/link';
 import toast, { Toaster } from 'react-hot-toast';
 import Footer from '@/components/Footer';
 import Navbar from '@/components/Navbar';
+import { assignMultipleTestsToApplicant } from '@/actions/tests/assignMultipleTestsToApplicant';
+import { scheduleInterview } from '@/actions/interviews/scheduleInterview';
+import { getAvailableInterviewers } from '@/actions/interviews/getAvailableInterviewers';
+import { getInterviewsForApplication } from '@/actions/interviews/getInterviewsForApplication';
+import { updateInterviewStatus } from '@/actions/interviews/updateInterviewStatus';
 
 export default function RecruiterApplicationDetailsPage() {
     const router = useRouter();
@@ -28,17 +37,91 @@ export default function RecruiterApplicationDetailsPage() {
     const [fullJob, setFullJob] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [user, setUser] = useState(null);
+    const [isAuthorizedRecruiter, setIsAuthorizedRecruiter] = useState(false);
+    const [isJobOwner, setIsJobOwner] = useState(false);
+    const [isOrgMember, setIsOrgMember] = useState(true);
+    const [hasViewAccess, setHasViewAccess] = useState(true);
     const [isUpdating, setIsUpdating] = useState(false);
     const [activeTab, setActiveTab] = useState('actions');
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const [testAssignments, setTestAssignments] = useState([]);
+    const [isLoadingTests, setIsLoadingTests] = useState(false);
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [pendingAction, setPendingAction] = useState(null);
     const [notes, setNotes] = useState('');
-    // Add this state variable with other state declarations
     const [statusHistory, setStatusHistory] = useState([]);
 
-    // JWT decoding and authentication
+    const [isAssignTestModalOpen, setIsAssignTestModalOpen] = useState(false);
+    const [availableTests, setAvailableTests] = useState([]);
+    const [selectedTests, setSelectedTests] = useState(new Set());
+    const [testAssignmentSettings, setTestAssignmentSettings] = useState({
+        testStartDate: '',
+        testEndDate: '',
+        isProctored: false,
+        proctoringSettings: {
+            fullscreen_required: true,
+            tab_switching_detection: true,
+            copy_paste_prevention: true
+        }
+    });
+    const [isAssigningTest, setIsAssigningTest] = useState(false);
+
+    // Interview related states
+    const [isInterviewModalOpen, setIsInterviewModalOpen] = useState(false);
+    const [isSchedulingInterview, setIsSchedulingInterview] = useState(false);
+    const [availableInterviewers, setAvailableInterviewers] = useState([]);
+    const [searchInterviewerQuery, setSearchInterviewerQuery] = useState('');
+    const [interviews, setInterviews] = useState([]);
+    const [isLoadingInterviews, setIsLoadingInterviews] = useState(false);
+    const [interviewFormData, setInterviewFormData] = useState({
+        scheduledAt: '',
+        durationMinutes: 60,
+        interviewType: 'technical',
+        meetingPlatform: 'google_meet',
+        meetingLink: '',
+        meetingLocation: '',
+        interviewers: [],
+        notes: ''
+    });
+
+    const [isRescheduleTestModalOpen, setIsRescheduleTestModalOpen] = useState(false);
+    const [isRescheduleInterviewModalOpen, setIsRescheduleInterviewModalOpen] = useState(false);
+    const [selectedTestForReschedule, setSelectedTestForReschedule] = useState(null);
+    const [selectedInterviewForReschedule, setSelectedInterviewForReschedule] = useState(null);
+    const [testRescheduleSettings, setTestRescheduleSettings] = useState({
+        testStartDate: '',
+        testEndDate: '',
+        isProctored: false,
+        proctoringSettings: {
+            fullscreen_required: true,
+            tab_switching_detection: true,
+            copy_paste_prevention: true
+        }
+    });
+    const [interviewRescheduleData, setInterviewRescheduleData] = useState({
+        scheduledAt: '',
+        durationMinutes: 60,
+        notes: ''
+    });
+    const [isRescheduling, setIsRescheduling] = useState(false);
+
+    const interviewTypes = [
+        { value: 'technical', label: 'Technical Interview' },
+        { value: 'hr', label: 'HR Interview' },
+        { value: 'managerial', label: 'Managerial Interview' },
+        { value: 'cultural', label: 'Cultural Fit Interview' },
+        { value: 'final', label: 'Final Round Interview' }
+    ];
+
+    const meetingPlatforms = [
+        { value: 'google_meet', label: 'Google Meet' },
+        { value: 'zoom', label: 'Zoom' },
+        { value: 'teams', label: 'Microsoft Teams' },
+        { value: 'in_person', label: 'In-Person' },
+        { value: 'phone', label: 'Phone Call' }
+    ];
+
     useEffect(() => {
         const token = localStorage.getItem('token');
         if (!token) {
@@ -57,6 +140,10 @@ export default function RecruiterApplicationDetailsPage() {
             };
             setUser(userData);
 
+            if (decoded.role === 'OrgAdmin') {
+                return;
+            }
+
             if (decoded.role && !['HR', 'SeniorHR', 'OrgAdmin'].includes(decoded.role)) {
                 router.push('/dashboard');
                 return;
@@ -68,6 +155,26 @@ export default function RecruiterApplicationDetailsPage() {
             router.push('/signin');
         }
     }, [router]);
+
+    useEffect(() => {
+        if (application) {
+            fetchStatusHistory();
+            fetchTestAssignments();
+            fetchInterviews();
+        }
+    }, [application]);
+
+    useEffect(() => {
+        if (user) {
+            fetchApplicationDetails();
+        }
+    }, [user, applicationId]);
+
+    useEffect(() => {
+        if (user?.orgId && isAssignTestModalOpen) {
+            fetchAvailableTests();
+        }
+    }, [user, isAssignTestModalOpen]);
 
     // Fetch application details
     const fetchApplicationDetails = async () => {
@@ -86,24 +193,43 @@ export default function RecruiterApplicationDetailsPage() {
                 const applicationData = appResult.application;
                 setApplication(applicationData);
 
-                // Fetch full job details based on the application's job_id
                 const jobResult = await getJobDetails(applicationData.job_id);
 
                 if (jobResult.success) {
                     setFullJob(jobResult.job);
+                    await checkRecruiterAccess(jobResult.job, user);
                 } else {
                     toast.error(jobResult.message || 'Failed to load job details');
                 }
             } else {
                 toast.error(appResult.message || 'Failed to load application details');
-                router.push('/organization/applications');
             }
         } catch (error) {
             console.error('Error fetching application or job details:', error);
             toast.error('Error loading details');
-            // router.push('/organization/applications');
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    // Fetch test assignments for this application
+    const fetchTestAssignments = async () => {
+        if (!applicationId) return;
+
+        setIsLoadingTests(true);
+        try {
+            const result = await getTestsForApplication(applicationId);
+            if (result.success) {
+                setTestAssignments(result.tests || []);
+            } else {
+                console.error('Failed to fetch test assignments:', result.message);
+                setTestAssignments([]);
+            }
+        } catch (error) {
+            console.error('Error fetching test assignments:', error);
+            setTestAssignments([]);
+        } finally {
+            setIsLoadingTests(false);
         }
     };
 
@@ -123,52 +249,190 @@ export default function RecruiterApplicationDetailsPage() {
         }
     };
 
-    useEffect(() => {
-        if (application) {
-            fetchStatusHistory();
+    const fetchAvailableTests = async () => {
+        try {
+            const result = await getOrganizationTests(user.orgId);
+            if (result.success) {
+                setAvailableTests(result.tests || []);
+            } else {
+                toast.error(result.message || 'Failed to load available tests');
+                setAvailableTests([]);
+            }
+        } catch (error) {
+            console.error('Error fetching available tests:', error);
+            toast.error('Error loading available tests');
+            setAvailableTests([]);
         }
-    }, [application]);
+    };
 
-    useEffect(() => {
-        if (user) {
-            fetchApplicationDetails();
+    // Fetch interviews for this application
+    const fetchInterviews = async () => {
+        if (!applicationId) return;
+
+        setIsLoadingInterviews(true);
+        try {
+            const result = await getInterviewsForApplication(applicationId);
+            if (result.success) {
+                setInterviews(result.interviews || []);
+            } else {
+                console.error('Failed to fetch interviews:', result.message);
+                setInterviews([]);
+            }
+        } catch (error) {
+            console.error('Error fetching interviews:', error);
+            setInterviews([]);
+        } finally {
+            setIsLoadingInterviews(false);
         }
-    }, [user, applicationId]);
+    };
 
-    // Update application status
-    const handleStatusUpdate = async (newStatus) => {
-        if (!user || !application) return;
+    const handleRescheduleTest = (testAssignment) => {
+        setSelectedTestForReschedule(testAssignment);
+        setTestRescheduleSettings({
+            testStartDate: testAssignment.test_start_date ? new Date(testAssignment.test_start_date).toISOString().slice(0, 16) : '',
+            testEndDate: testAssignment.test_end_date ? new Date(testAssignment.test_end_date).toISOString().slice(0, 16) : '',
+            isProctored: testAssignment.is_proctored || false,
+            proctoringSettings: testAssignment.proctoring_settings || {
+                fullscreen_required: true,
+                tab_switching_detection: true,
+                copy_paste_prevention: true
+            }
+        });
+        setIsRescheduleTestModalOpen(true);
+    };
 
-        setIsUpdating(true);
+    const handleConfirmTestReschedule = async () => {
+        if (!selectedTestForReschedule || !testRescheduleSettings.testStartDate || !testRescheduleSettings.testEndDate) {
+            toast.error('Please set both start and end dates');
+            return;
+        }
+
+        setIsRescheduling(true);
         try {
             const authData = {
                 orgId: user.orgId,
                 userId: user.id
             };
 
-            const result = await updateApplicationStatus(authData, applicationId, newStatus);
+            const result = await rescheduleTest(
+                authData,
+                selectedTestForReschedule.id,
+                testRescheduleSettings.testStartDate,
+                testRescheduleSettings.testEndDate,
+                {
+                    isProctored: testRescheduleSettings.isProctored,
+                    proctoringSettings: testRescheduleSettings.proctoringSettings
+                }
+            );
 
             if (result.success) {
-                setApplication(prev => ({ ...prev, status: newStatus }));
-                toast.success(`Application ${newStatus.replace('_', ' ')}`);
+                toast.success(result.message);
+                setIsRescheduleTestModalOpen(false);
+                setSelectedTestForReschedule(null);
+                // Refresh data
+                await fetchTestAssignments();
+                await fetchStatusHistory();
             } else {
-                toast.error(result.message || 'Failed to update status');
+                toast.error(result.message || 'Failed to reschedule test');
             }
         } catch (error) {
-            console.error('Error updating status:', error);
-            toast.error('Error updating application status');
+            console.error('Error rescheduling test:', error);
+            toast.error('Error rescheduling test');
         } finally {
-            setIsUpdating(false);
+            setIsRescheduling(false);
+        }
+    };
+
+    // Interview Reschedule Handlers
+    const handleRescheduleInterview = (interview) => {
+        setSelectedInterviewForReschedule(interview);
+        setInterviewRescheduleData({
+            scheduledAt: interview.scheduled_at ? new Date(interview.scheduled_at).toISOString().slice(0, 16) : '',
+            durationMinutes: interview.duration_minutes || 60,
+            notes: ''
+        });
+        setIsRescheduleInterviewModalOpen(true);
+    };
+
+    const handleConfirmInterviewReschedule = async () => {
+        if (!selectedInterviewForReschedule || !interviewRescheduleData.scheduledAt) {
+            toast.error('Please select interview date and time');
+            return;
+        }
+
+        setIsRescheduling(true);
+        try {
+            const authData = {
+                orgId: user.orgId,
+                userId: user.id
+            };
+
+            const result = await rescheduleInterview(
+                authData,
+                selectedInterviewForReschedule.id,
+                interviewRescheduleData.scheduledAt,
+                interviewRescheduleData.durationMinutes,
+                interviewRescheduleData.notes
+            );
+
+            if (result.success) {
+                toast.success(result.message);
+                setIsRescheduleInterviewModalOpen(false);
+                setSelectedInterviewForReschedule(null);
+                // Refresh data
+                await fetchInterviews();
+                await fetchStatusHistory();
+            } else {
+                toast.error(result.message || 'Failed to reschedule interview');
+            }
+        } catch (error) {
+            console.error('Error rescheduling interview:', error);
+            toast.error('Error rescheduling interview');
+        } finally {
+            setIsRescheduling(false);
+        }
+    };
+
+    const handleInterviewRescheduleInputChange = (field, value) => {
+        setInterviewRescheduleData(prev => ({
+            ...prev,
+            [field]: value
+        }));
+    };
+
+    // Check if user has access to this job's applications
+    const checkRecruiterAccess = async (job, userData) => {
+        const isRecruiter = job.assigned_recruiters?.includes(parseInt(userData.id));
+        const isOwner = job.posted_by === userData.id;
+        const isOrgMember = job.org_id === userData.orgId;
+        const isOrgAdmin = userData.role === 'OrgAdmin';
+
+        setIsAuthorizedRecruiter(isRecruiter);
+        setIsJobOwner(isOwner);
+        setIsOrgMember(isOrgMember);
+
+        const hasFullAccess = isRecruiter || isOwner || isOrgAdmin;
+        const hasViewAccess = isOrgMember;
+
+        setHasViewAccess(hasViewAccess);
+
+        if (!isOrgMember) {
+            toast.error('You do not have access to this application');
+            return;
+        }
+
+        if (!hasFullAccess) {
+            toast.success('You have view-only access to this application');
         }
     };
 
     const openConfirmationModal = (action) => {
         setPendingAction(action);
 
-        // Set default notes based on action
         const defaultNotes = {
             shortlisted: `Candidate ${application.applicant_name} has been shortlisted for ${application.job_title} position. Strong match based on skills and experience.`,
             test_scheduled: `Technical assessment test assigned to ${application.applicant_name} for ${application.job_title} position.`,
+            test_completed: `Test completed by ${application.applicant_name} for ${application.job_title} position.`,
             interview_scheduled: `Interview scheduled with ${application.applicant_name} for ${application.job_title} position.`,
             waiting_for_result: `Interview completed with ${application.applicant_name}. Waiting for final decision.`,
             hired: `Congratulations! ${application.applicant_name} has been hired for ${application.job_title} position.`,
@@ -179,7 +443,6 @@ export default function RecruiterApplicationDetailsPage() {
         setIsModalOpen(true);
     };
 
-    // Close modal
     const closeModal = () => {
         setIsModalOpen(false);
         setPendingAction(null);
@@ -202,7 +465,6 @@ export default function RecruiterApplicationDetailsPage() {
                 setApplication(prev => ({ ...prev, status: pendingAction.newStatus }));
                 toast.success(`Application ${pendingAction.newStatus.replace('_', ' ')}`);
 
-                // Refresh history
                 await fetchStatusHistory();
                 closeModal();
             } else {
@@ -216,6 +478,301 @@ export default function RecruiterApplicationDetailsPage() {
         }
     };
 
+    const handleAssignTest = () => {
+        setIsAssignTestModalOpen(true);
+        setSelectedTests(new Set());
+        setTestAssignmentSettings({
+            testStartDate: '',
+            testEndDate: '',
+            isProctored: false,
+            proctoringSettings: {
+                fullscreen_required: true,
+                tab_switching_detection: true,
+                copy_paste_prevention: true
+            }
+        });
+    };
+
+    const handleConfirmTestAssignment = async () => {
+        if (selectedTests.size === 0 || !testAssignmentSettings.testStartDate || !testAssignmentSettings.testEndDate) {
+            toast.error('Please select at least one test and set both start and end dates');
+            return;
+        }
+
+        setIsAssigningTest(true);
+        try {
+            const result = await assignMultipleTestsToApplicant(
+                Array.from(selectedTests),
+                applicationId,
+                testAssignmentSettings.testStartDate,
+                testAssignmentSettings.testEndDate,
+                user.id,
+                user.orgId,
+                {
+                    isProctored: testAssignmentSettings.isProctored,
+                    proctoringSettings: testAssignmentSettings.proctoringSettings
+                }
+            );
+
+            if (result.success) {
+                toast.success(result.message);
+                setIsAssignTestModalOpen(false);
+                setApplication(prev => ({ ...prev, status: 'test_scheduled' }));
+                await fetchTestAssignments();
+                await fetchStatusHistory();
+            } else {
+                toast.error(result.message || 'Failed to assign tests');
+            }
+        } catch (error) {
+            console.error('Error assigning tests:', error);
+            toast.error('Error assigning tests');
+        } finally {
+            setIsAssigningTest(false);
+        }
+    };
+
+    // Interview related functions
+    const handleScheduleInterview = () => {
+        setIsInterviewModalOpen(true);
+        setInterviewFormData({
+            scheduledAt: '',
+            durationMinutes: 60,
+            interviewType: 'technical',
+            meetingPlatform: 'google_meet',
+            meetingLink: '',
+            meetingLocation: '',
+            interviewers: [],
+            notes: ''
+        });
+        setSearchInterviewerQuery('');
+    };
+
+    const handleInterviewInputChange = (field, value) => {
+        setInterviewFormData(prev => ({
+            ...prev,
+            [field]: value
+        }));
+
+        if (field === 'meetingPlatform' && value !== 'in_person' && value !== 'phone') {
+            const platformLinks = {
+                'google_meet': 'https://meet.google.com/new',
+                'zoom': 'https://zoom.us/j/',
+                'teams': 'https://teams.microsoft.com/l/meetup-join/'
+            };
+            setInterviewFormData(prev => ({
+                ...prev,
+                meetingPlatform: value,
+                meetingLink: platformLinks[value] || ''
+            }));
+        }
+
+        if (field === 'meetingPlatform' && (value === 'in_person' || value === 'phone')) {
+            setInterviewFormData(prev => ({
+                ...prev,
+                meetingLink: ''
+            }));
+        }
+    };
+
+    const handleInterviewerToggle = (interviewerId) => {
+        setInterviewFormData(prev => ({
+            ...prev,
+            interviewers: prev.interviewers.includes(interviewerId)
+                ? prev.interviewers.filter(id => id !== interviewerId)
+                : [...prev.interviewers, interviewerId]
+        }));
+    };
+
+    const handleInterviewSubmit = async (e) => {
+        e.preventDefault();
+
+        if (!interviewFormData.scheduledAt) {
+            toast.error('Please select interview date and time');
+            return;
+        }
+
+        if (interviewFormData.interviewers.length === 0) {
+            toast.error('Please select at least one interviewer');
+            return;
+        }
+
+        if (interviewFormData.meetingPlatform === 'in_person' && !interviewFormData.meetingLocation) {
+            toast.error('Please provide meeting location for in-person interview');
+            return;
+        }
+
+        setIsSchedulingInterview(true);
+        try {
+            const authData = {
+                orgId: user.orgId,
+                userId: user.id
+            };
+
+            const result = await scheduleInterview(authData, {
+                applicationId: applicationId,
+                ...interviewFormData
+            });
+
+            if (result.success) {
+                toast.success('Interview scheduled successfully');
+                setIsInterviewModalOpen(false);
+                setApplication(prev => ({ ...prev, status: 'interview_scheduled' }));
+                await fetchStatusHistory();
+                await fetchInterviews(); // Add this line to refresh interviews list
+            } else {
+                toast.error(result.message || 'Failed to schedule interview');
+            }
+        } catch (error) {
+            console.error('Error scheduling interview:', error);
+            toast.error('Error scheduling interview');
+        } finally {
+            setIsSchedulingInterview(false);
+        }
+    };
+
+    const getSelectedInterviewers = () => {
+        return availableInterviewers.filter(interviewer =>
+            interviewFormData.interviewers.includes(interviewer.id)
+        );
+    };
+
+    const handleUpdateInterviewStatus = async (interviewId, newStatus, notes = '') => {
+        setIsUpdating(true);
+        try {
+            const authData = {
+                orgId: user.orgId,
+                userId: user.id
+            };
+
+            const result = await updateInterviewStatus(authData, interviewId, newStatus, notes);
+
+            if (result.success) {
+                toast.success(`Interview marked as ${newStatus}`);
+                // Refresh interviews list
+                await fetchInterviews();
+                // Refresh status history
+                await fetchStatusHistory();
+            } else {
+                toast.error(result.message || 'Failed to update interview status');
+            }
+        } catch (error) {
+            console.error('Error updating interview status:', error);
+            toast.error('Error updating interview status');
+        } finally {
+            setIsUpdating(false);
+        }
+    };
+
+    const getInterviewStatusColor = (status, scheduledAt) => {
+        const now = new Date();
+        const interviewTime = new Date(scheduledAt);
+
+        // If interview time has passed and status is still scheduled, show warning
+        if (status === 'scheduled' && now > interviewTime) {
+            return 'bg-amber-100 text-amber-800 border-amber-200';
+        }
+
+        const colors = {
+            scheduled: 'bg-blue-100 text-blue-800 border-blue-200',
+            completed: 'bg-green-100 text-green-800 border-green-200',
+            cancelled: 'bg-red-100 text-red-800 border-red-200',
+            rescheduled: 'bg-purple-100 text-purple-800 border-purple-200'
+        };
+        return colors[status] || 'bg-gray-100 text-gray-800 border-gray-200';
+    };
+
+    const getInterviewStatusIcon = (status, scheduledAt) => {
+        const now = new Date();
+        const interviewTime = new Date(scheduledAt);
+
+        // If interview time has passed and status is still scheduled, show warning icon
+        if (status === 'scheduled' && now > interviewTime) {
+            return <AlertCircle className="w-4 h-4 text-amber-600" />;
+        }
+
+        switch (status) {
+            case 'completed':
+                return <CheckCircle className="w-4 h-4 text-green-600" />;
+            case 'cancelled':
+                return <XCircle className="w-4 h-4 text-red-600" />;
+            case 'rescheduled':
+                return <RefreshCw className="w-4 h-4 text-purple-600" />;
+            case 'scheduled':
+                return <Calendar className="w-4 h-4 text-blue-600" />;
+            default:
+                return <Calendar className="w-4 h-4 text-gray-600" />;
+        }
+    };
+
+    const isInterviewCompleted = (interview) => {
+        const now = new Date();
+        const interviewTime = new Date(interview.scheduled_at);
+        return now > interviewTime && interview.status === 'scheduled';
+    };
+
+    // Fetch interviewers when modal opens
+    useEffect(() => {
+        if (isInterviewModalOpen) {
+            const fetchInterviewersData = async () => {
+                try {
+                    const response = await getAvailableInterviewers(user.orgId);
+                    if (response.success) {
+                        setAvailableInterviewers(response.interviewers);
+                    } else {
+                        toast.error(response.message || 'Failed to load interviewers');
+                    }
+                } catch (error) {
+                    console.error('Error fetching interviewers:', error);
+                    toast.error('Error loading interviewers');
+                }
+            };
+
+            fetchInterviewersData();
+        }
+    }, [isInterviewModalOpen, user?.orgId]);
+
+    const filteredInterviewers = availableInterviewers.filter(interviewer =>
+        interviewer.name.toLowerCase().includes(searchInterviewerQuery.toLowerCase()) ||
+        interviewer.email.toLowerCase().includes(searchInterviewerQuery.toLowerCase())
+    );
+
+    // Helper function to check if test is already assigned
+    const isTestAlreadyAssigned = (testId) => {
+        return testAssignments.some(assignment =>
+            assignment.test_id === testId &&
+            ['assigned', 'attempted'].includes(assignment.status)
+        );
+    };
+
+    const handleViewTestDetails = (testAssignment) => {
+        console.log('Viewing test details:', testAssignment);
+        toast.success('Test details view functionality will be implemented soon');
+    };
+
+    const handleSendReminder = (testAssignment) => {
+        console.log('Sending reminder for test:', testAssignment);
+        toast.success('Reminder sent to candidate');
+    };
+
+    const handleDownloadReport = (testAssignment) => {
+        console.log('Downloading test report:', testAssignment);
+        toast.success('Test report download functionality will be implemented soon');
+    };
+
+    const handleContactCandidate = (testAssignment) => {
+        console.log('Contacting candidate about test:', testAssignment);
+        toast.success('Contact functionality will be implemented soon');
+    };
+
+    const handleViewTestResults = (testAssignment) => {
+        console.log('Viewing test results:', testAssignment);
+        toast.success('Test results view functionality will be implemented soon');
+    };
+
+    const handleDownloadResume = () => {
+        toast.success('Download functionality will be implemented soon');
+    };
+
     const getStatusIcon = (status) => {
         switch (status) {
             case 'hired':
@@ -226,6 +783,8 @@ export default function RecruiterApplicationDetailsPage() {
                 return <Video className="w-5 h-5 text-purple-500" />;
             case 'test_scheduled':
                 return <Zap className="w-5 h-5 text-blue-500" />;
+            case 'test_completed':
+                return <FileCheck className="w-5 h-5 text-green-500" />;
             case 'shortlisted':
                 return <Star className="w-5 h-5 text-indigo-500" />;
             case 'waiting_for_result':
@@ -242,10 +801,21 @@ export default function RecruiterApplicationDetailsPage() {
             submitted: 'bg-yellow-100 text-yellow-800 border-yellow-200',
             shortlisted: 'bg-indigo-100 text-indigo-800 border-indigo-200',
             test_scheduled: 'bg-blue-100 text-blue-800 border-blue-200',
+            test_completed: 'bg-green-100 text-green-800 border-green-200',
             interview_scheduled: 'bg-purple-100 text-purple-800 border-purple-200',
             waiting_for_result: 'bg-orange-100 text-orange-800 border-orange-200',
             hired: 'bg-green-100 text-green-800 border-green-200',
             rejected: 'bg-red-100 text-red-800 border-red-200'
+        };
+        return colors[status] || 'bg-gray-100 text-gray-800 border-gray-200';
+    };
+
+    const getTestStatusColor = (status) => {
+        const colors = {
+            assigned: 'bg-blue-100 text-blue-800 border-blue-200',
+            attempted: 'bg-green-100 text-green-800 border-green-200',
+            expired: 'bg-red-100 text-red-800 border-red-200',
+            cancelled: 'bg-gray-100 text-gray-800 border-gray-200'
         };
         return colors[status] || 'bg-gray-100 text-gray-800 border-gray-200';
     };
@@ -268,6 +838,19 @@ export default function RecruiterApplicationDetailsPage() {
         });
     };
 
+    const formatDateTime = (dateString) => {
+        if (!dateString) return 'N/A';
+        const date = new Date(dateString);
+        if (isNaN(date)) return 'Invalid Date';
+        return date.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    };
+
     // Format salary
     const formatSalary = (min, max, currency = 'INR') => {
         if (!min && !max) return 'Not specified';
@@ -283,87 +866,13 @@ export default function RecruiterApplicationDetailsPage() {
         return `Up to ${formatNumber(max)} ${currency}`;
     };
 
-    // Loading state
-    if (!user || isLoading) {
-        return (
-            <>
-                <Navbar />
-                <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
-                    <div className="text-center">
-                        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-                        <p className="text-gray-600 text-lg">Loading application details...</p>
-                    </div>
-                </div>
-                <Footer />
-            </>
-        );
-    }
-
-    if (!application) {
-        return (
-            <>
-                <Navbar />
-                <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
-                    <div className="text-center bg-white rounded-2xl shadow-xl border border-gray-200 p-8 max-w-md">
-                        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <XCircle className="w-8 h-8 text-red-500" />
-                        </div>
-                        <h2 className="text-2xl font-bold text-gray-900 mb-4">Application Not Found</h2>
-                        <p className="text-gray-600 mb-6">The application you're looking for doesn't exist or you don't have access to it.</p>
-                        <Link
-                            href="/organization/applications"
-                            className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl"
-                        >
-                            <ArrowLeft className="w-5 h-5" />
-                            Back to Applications
-                        </Link>
-                    </div>
-                </div>
-                <Footer />
-            </>
-        );
-    }
-
-    const tabs = [
-        { id: 'actions', label: 'Actions', icon: Send },
-        { id: 'resume', label: 'Resume Details', icon: User },
-        { id: 'job', label: 'Job Details', icon: Building },
-        ...(application.ai_feedback ? [{ id: 'ai-analysis', label: 'AI Analysis', icon: Zap }] : [])
-    ];
-
-    // Action handlers
-    const handleAssignTest = () => {
-        console.log('Assigning test to applicant:', {
-            applicantId: application.applicant_id,
-            applicantName: application.applicant_name,
-            jobId: application.job_id,
-            jobTitle: application.job_title
-        });
-        toast.success('Test assignment functionality will be implemented soon');
-    };
-
-    const handleScheduleInterview = () => {
-        console.log('Scheduling interview for:', {
-            applicantId: application.applicant_id,
-            applicantName: application.applicant_name,
-            jobId: application.job_id,
-            jobTitle: application.job_title,
-            applicantEmail: application.applicant_email
-        });
-        toast.success('Interview scheduling functionality will be implemented soon');
-    };
-
-    const handleDownloadResume = () => {
-        toast.success('Download functionality will be implemented soon');
-    };
-
-    const handleShareApplication = () => {
-        toast.success('Share functionality will be implemented soon');
-    };
-
-    // Replace all direct handleStatusUpdate calls in availableActions with openConfirmationModal
+    // Get available actions based on current status
     const getAvailableActions = () => {
         const currentStatus = application.status;
+
+        if (!isAuthorizedRecruiter && !isJobOwner && user?.role !== 'OrgAdmin') {
+            return [];
+        }
 
         switch (currentStatus) {
             case 'submitted':
@@ -449,12 +958,64 @@ export default function RecruiterApplicationDetailsPage() {
             case 'test_scheduled':
                 return [
                     {
+                        id: 'assign_another_test',
+                        label: 'Assign Another Test',
+                        description: 'Send additional assessment test to candidate',
+                        icon: Zap,
+                        color: 'bg-blue-600 hover:bg-blue-700',
+                        action: handleAssignTest
+                    },
+                    {
                         id: 'schedule_interview',
                         label: 'Schedule Interview',
                         description: 'Arrange interview with the candidate',
                         icon: Video,
                         color: 'bg-purple-600 hover:bg-purple-700',
                         action: handleScheduleInterview
+                    },
+                    {
+                        id: 'direct_hire',
+                        label: 'Direct Hire',
+                        description: 'Hire candidate directly without further process',
+                        icon: CheckCircle,
+                        color: 'bg-green-600 hover:bg-green-700',
+                        action: () => openConfirmationModal({ newStatus: 'hired' })
+                    },
+                    {
+                        id: 'reject',
+                        label: 'Reject Application',
+                        description: 'Reject candidate at this stage',
+                        icon: XCircle,
+                        color: 'bg-red-600 hover:bg-red-700',
+                        action: () => openConfirmationModal({ newStatus: 'rejected' })
+                    }
+                ];
+
+            case 'test_completed':
+                return [
+                    {
+                        id: 'assign_another_test',
+                        label: 'Assign Another Test',
+                        description: 'Send additional assessment test to candidate',
+                        icon: Zap,
+                        color: 'bg-blue-600 hover:bg-blue-700',
+                        action: handleAssignTest
+                    },
+                    {
+                        id: 'schedule_interview',
+                        label: 'Schedule Interview',
+                        description: 'Arrange interview with the candidate',
+                        icon: Video,
+                        color: 'bg-purple-600 hover:bg-purple-700',
+                        action: handleScheduleInterview
+                    },
+                    {
+                        id: 'direct_hire',
+                        label: 'Direct Hire',
+                        description: 'Hire candidate directly without further process',
+                        icon: CheckCircle,
+                        color: 'bg-green-600 hover:bg-green-700',
+                        action: () => openConfirmationModal({ newStatus: 'hired' })
                     },
                     {
                         id: 'reject',
@@ -469,12 +1030,12 @@ export default function RecruiterApplicationDetailsPage() {
             case 'interview_scheduled':
                 return [
                     {
-                        id: 'waiting_result',
-                        label: 'Mark as Waiting for Result',
-                        description: 'Interview completed, waiting for final decision',
-                        icon: Clock,
-                        color: 'bg-orange-600 hover:bg-orange-700',
-                        action: () => openConfirmationModal({ newStatus: 'waiting_for_result' })
+                        id: 'direct_hire',
+                        label: 'Direct Hire',
+                        description: 'Hire candidate directly without further process',
+                        icon: CheckCircle,
+                        color: 'bg-green-600 hover:bg-green-700',
+                        action: () => openConfirmationModal({ newStatus: 'hired' })
                     },
                     {
                         id: 'reject',
@@ -511,12 +1072,611 @@ export default function RecruiterApplicationDetailsPage() {
         }
     };
 
+    if (!user || isLoading) {
+        return (
+            <>
+                <Navbar />
+                <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
+                    <div className="text-center">
+                        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+                        <p className="text-gray-600 text-lg">Loading application details...</p>
+                    </div>
+                </div>
+                <Footer />
+            </>
+        );
+    }
+
+    if (!isOrgMember) {
+        return (
+            <>
+                <Navbar />
+                <Toaster />
+                <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
+                    <div className="text-center bg-white rounded-2xl shadow-xl border border-gray-200 p-8 max-w-md">
+                        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <XCircle className="w-8 h-8 text-red-500" />
+                        </div>
+                        <h2 className="text-2xl font-bold text-gray-900 mb-4">Access Denied</h2>
+                        <p className="text-gray-600 mb-6">You don't have access to this application.</p>
+                        <Link
+                            href="/organization/applications"
+                            className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+                        >
+                            <ArrowLeft className="w-5 h-5" />
+                            Back to Applications
+                        </Link>
+                    </div>
+                </div>
+                <Footer />
+            </>
+        );
+    }
+
+    if (!application) {
+        return (
+            <>
+                <Navbar />
+                <Toaster />
+                <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
+                    <div className="text-center bg-white rounded-2xl shadow-xl border border-gray-200 p-8 max-w-md">
+                        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <XCircle className="w-8 h-8 text-red-500" />
+                        </div>
+                        <h2 className="text-2xl font-bold text-gray-900 mb-4">Application Not Found</h2>
+                        <p className="text-gray-600 mb-6">The application you're looking for doesn't exist or you don't have access to it.</p>
+                        <Link
+                            href="/organization/applications"
+                            className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+                        >
+                            <ArrowLeft className="w-5 h-5" />
+                            Back to Applications
+                        </Link>
+                    </div>
+                </div>
+                <Footer />
+            </>
+        );
+    }
+
     const availableActions = getAvailableActions();
+
+    const tabs = [
+        { id: 'actions', label: 'Actions', icon: Send },
+        { id: 'resume', label: 'Resume Details', icon: User },
+        { id: 'job', label: 'Job Details', icon: Building },
+        ...(application.ai_feedback ? [{ id: 'ai-analysis', label: 'AI Analysis', icon: Zap }] : [])
+    ];
+
+    const TestAssignmentsSection = () => {
+        if (isLoadingTests) {
+            return (
+                <div className="mt-8">
+                    <h3 className="text-xl font-bold text-gray-900 mb-4">Test Assignments</h3>
+                    <div className="text-center py-8">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+                        <p className="text-gray-600">Loading test assignments...</p>
+                    </div>
+                </div>
+            );
+        }
+
+        if (testAssignments.length === 0) {
+            return null;
+        }
+
+        return (
+            <div className="mt-12">
+                <h3 className="text-xl font-bold text-gray-900 mb-6">Test Assignments</h3>
+                <div className="space-y-6">
+                    {testAssignments.map((test) => (
+                        <div key={test.id} className="bg-gradient-to-br from-gray-50 to-white rounded-2xl p-6 border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300">
+                            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                                <div className="flex-1">
+                                    {/* Test Header */}
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 bg-blue-100 rounded-lg">
+                                                <FileText className="w-5 h-5 text-blue-600" />
+                                            </div>
+                                            <div>
+                                                <h4 className="text-xl font-bold text-gray-900">{test.test_title}</h4>
+                                                <p className="text-gray-600 text-sm">
+                                                    Assigned by: <span className="font-semibold">{test.assigned_by_name}</span>
+                                                    {test.assigned_by_email && ` (${test.assigned_by_email})`}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold ${getTestStatusColor(test.status)}`}>
+                                            {test.status === 'assigned' && <Clock className="w-4 h-4" />}
+                                            {test.status === 'attempted' && <FileCheck className="w-4 h-4" />}
+                                            {test.status === 'expired' && <XCircle className="w-4 h-4" />}
+                                            {test.status === 'cancelled' && <XCircle className="w-4 h-4" />}
+                                            {test.status.replace('_', ' ')}
+                                        </div>
+                                    </div>
+
+                                    {/* Test Details Grid */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                                        <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                            <div className="text-sm text-gray-600 font-medium">Duration</div>
+                                            <div className="text-lg font-semibold text-gray-900">
+                                                {test.duration_minutes} mins
+                                            </div>
+                                        </div>
+                                        <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                            <div className="text-sm text-gray-600 font-medium">Total Marks</div>
+                                            <div className="text-lg font-semibold text-gray-900">
+                                                {test.total_marks}
+                                            </div>
+                                        </div>
+                                        <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                            <div className="text-sm text-gray-600 font-medium">Passing Marks</div>
+                                            <div className="text-lg font-semibold text-gray-900">
+                                                {test.passing_marks}
+                                            </div>
+                                        </div>
+                                        <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                            <div className="text-sm text-gray-600 font-medium">Test Status</div>
+                                            <div className={`text-lg font-semibold ${test.test_active ? 'text-green-600' : 'text-red-600'}`}>
+                                                {test.test_active ? 'Active' : 'Inactive'}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Test Description */}
+                                    {test.test_description && (
+                                        <div className="mb-4">
+                                            <div className="text-sm font-semibold text-gray-700 mb-2">Description</div>
+                                            <p className="text-gray-600 text-sm leading-relaxed">
+                                                {test.test_description}
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* Test Instructions */}
+                                    {test.instructions && (
+                                        <div className="mb-4">
+                                            <div className="text-sm font-semibold text-gray-700 mb-2">Instructions</div>
+                                            <p className="text-gray-600 text-sm leading-relaxed">
+                                                {test.instructions}
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* Timing Information */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600 mb-4">
+                                        <div className="space-y-2">
+                                            <div className="flex items-center gap-2">
+                                                <Calendar className="w-4 h-4" />
+                                                <span>Assigned: {formatDateTime(test.assigned_at)}</span>
+                                            </div>
+                                            {test.test_start_date && (
+                                                <div className="flex items-center gap-2">
+                                                    <Play className="w-4 h-4" />
+                                                    <span>Start: {formatDateTime(test.test_start_date)}</span>
+                                                </div>
+                                            )}
+                                            {test.test_end_date && (
+                                                <div className="flex items-center gap-2">
+                                                    <Clock className="w-4 h-4" />
+                                                    <span>End: {formatDateTime(test.test_end_date)}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="space-y-2">
+                                            {test.is_proctored && (
+                                                <div className="flex items-center gap-2">
+                                                    <Eye className="w-4 h-4 text-blue-600" />
+                                                    <span className="text-blue-600 font-medium">Proctored Test</span>
+                                                </div>
+                                            )}
+                                            {test.proctoring_settings && (
+                                                <div className="text-xs text-gray-500">
+                                                    {test.proctoring_settings.fullscreen_required && 'Fullscreen • '}
+                                                    {test.proctoring_settings.copy_paste_prevention && 'Copy Prevention • '}
+                                                    {test.proctoring_settings.tab_switching_detection && 'Tab Switching Detection'}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Score Display */}
+                                    {test.score !== null && test.score !== undefined ? (
+                                        <div className="flex items-center gap-4">
+                                            <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 ${getScoreColor(test.score)}`}>
+                                                <Star className="w-4 h-4" />
+                                                <span className="font-semibold">Score: {test.score}%</span>
+                                            </div>
+                                            {test.passing_marks && (
+                                                <div className={`text-sm font-medium ${test.score >= test.passing_marks ? 'text-green-600' : 'text-red-600'}`}>
+                                                    {test.score >= test.passing_marks ? 'Passed' : 'Failed'}
+                                                    (Required: {test.passing_marks}%)
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : test.status === 'attempted' && (
+                                        <div className="text-sm text-gray-500">
+                                            Test completed - Score pending evaluation
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Action Buttons */}
+                                {(isAuthorizedRecruiter || isJobOwner || (user && user.role === 'OrgAdmin')) && (
+                                    <div className="flex flex-col gap-3 lg:w-48">
+                                        {test.status === 'assigned' && (
+                                            <>
+                                                <button
+                                                    onClick={() => handleRescheduleTest(test)}
+                                                    className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                >
+                                                    <RefreshCw className="w-4 h-4" />
+                                                    Reschedule
+                                                </button>
+                                                <button
+                                                    onClick={() => handleViewTestDetails(test)}
+                                                    className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                >
+                                                    <Eye className="w-4 h-4" />
+                                                    View Details
+                                                </button>
+                                                <button
+                                                    onClick={() => handleSendReminder(test)}
+                                                    className="flex items-center justify-center gap-2 px-4 py-3 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                >
+                                                    <Send className="w-4 h-4" />
+                                                    Send Reminder
+                                                </button>
+                                            </>
+                                        )}
+                                        {test.status === 'attempted' && (
+                                            <>
+                                                <button
+                                                    onClick={() => handleViewTestResults(test)}
+                                                    className="flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                >
+                                                    <FileCheck className="w-4 h-4" />
+                                                    View Results
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDownloadReport(test)}
+                                                    className="flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                >
+                                                    <Download className="w-4 h-4" />
+                                                    Download Report
+                                                </button>
+                                            </>
+                                        )}
+                                        {(test.status === 'expired' || test.status === 'cancelled') && (
+                                            <>
+                                                <button
+                                                    onClick={() => handleRescheduleTest(test)}
+                                                    className="flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                >
+                                                    <RefreshCw className="w-4 h-4" />
+                                                    Reassign Test
+                                                </button>
+                                                <button
+                                                    onClick={() => handleViewTestDetails(test)}
+                                                    className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                >
+                                                    <Eye className="w-4 h-4" />
+                                                    View History
+                                                </button>
+                                            </>
+                                        )}
+
+                                        {/* Common Actions */}
+                                        <button
+                                            onClick={() => handleContactCandidate(test)}
+                                            className="flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                        >
+                                            <Mail className="w-4 h-4" />
+                                            Contact Candidate
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    };
+
+
+    const InterviewsSection = () => {
+        if (isLoadingInterviews) {
+            return (
+                <div className="mt-8">
+                    <h3 className="text-xl font-bold text-gray-900 mb-4">Interview Schedule</h3>
+                    <div className="text-center py-8">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+                        <p className="text-gray-600">Loading interviews...</p>
+                    </div>
+                </div>
+            );
+        }
+
+        if (interviews.length === 0) {
+            return null;
+        }
+
+        return (
+            <div className="mt-12">
+                <h3 className="text-xl font-bold text-gray-900 mb-6">Interview Schedule</h3>
+                <div className="space-y-6">
+                    {interviews.map((interview) => {
+                        const isCompleted = isInterviewCompleted(interview);
+
+                        return (
+                            <div key={interview.id} className="bg-gradient-to-br from-gray-50 to-white rounded-2xl p-6 border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300">
+                                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                                    <div className="flex-1">
+                                        {/* Interview Header */}
+                                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                                            <div className="flex items-center gap-3">
+                                                <div className="p-2 bg-purple-100 rounded-lg">
+                                                    <Video className="w-5 h-5 text-purple-600" />
+                                                </div>
+                                                <div>
+                                                    <h4 className="text-xl font-bold text-gray-900">
+                                                        {interviewTypes.find(t => t.value === interview.interview_type)?.label || 'Interview'}
+                                                    </h4>
+                                                    <p className="text-gray-600 text-sm">
+                                                        Scheduled by: <span className="font-semibold">{interview.scheduled_by_name}</span>
+                                                        {interview.scheduled_by_email && ` (${interview.scheduled_by_email})`}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold ${getInterviewStatusColor(interview.status, interview.scheduled_at)}`}>
+                                                {getInterviewStatusIcon(interview.status, interview.scheduled_at)}
+                                                {interview.status === 'scheduled' && isCompleted ? 'Time Completed' : interview.status.replace('_', ' ')}
+                                            </div>
+                                        </div>
+
+                                        {/* Interview Details Grid */}
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                                            <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                                <div className="text-sm text-gray-600 font-medium">Date & Time</div>
+                                                <div className="text-lg font-semibold text-gray-900">
+                                                    {formatDateTime(interview.scheduled_at)}
+                                                </div>
+                                            </div>
+                                            <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                                <div className="text-sm text-gray-600 font-medium">Duration</div>
+                                                <div className="text-lg font-semibold text-gray-900">
+                                                    {interview.duration_minutes} mins
+                                                </div>
+                                            </div>
+                                            <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                                <div className="text-sm text-gray-600 font-medium">Platform</div>
+                                                <div className="text-lg font-semibold text-gray-900 capitalize">
+                                                    {interview.meeting_platform?.replace('_', ' ') || 'N/A'}
+                                                </div>
+                                            </div>
+                                            <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                                <div className="text-sm text-gray-600 font-medium">Interviewers</div>
+                                                <div className="text-lg font-semibold text-gray-900">
+                                                    {interview.interviewer_names?.length || 0}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Meeting Details */}
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600 mb-4">
+                                            <div className="space-y-2">
+                                                {interview.meeting_platform === 'in_person' ? (
+                                                    <div className="flex items-center gap-2">
+                                                        <MapPin className="w-4 h-4" />
+                                                        <span>Location: {interview.meeting_location || 'Not specified'}</span>
+                                                    </div>
+                                                ) : interview.meeting_platform !== 'phone' ? (
+                                                    <div className="flex items-center gap-2">
+                                                        <Video className="w-4 h-4" />
+                                                        <span>Link: {interview.meeting_link ? (
+                                                            <a href={interview.meeting_link} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700 font-medium">
+                                                                Join Meeting
+                                                            </a>
+                                                        ) : 'Not provided'}</span>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center gap-2">
+                                                        <Phone className="w-4 h-4" />
+                                                        <span>Phone Interview</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="space-y-2">
+                                                {interview.interviewer_names && interview.interviewer_names.length > 0 && (
+                                                    <div className="flex items-start gap-2">
+                                                        <Users className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                                        <span>Interviewers: {interview.interviewer_names.join(', ')}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Notes */}
+                                        {interview.notes && (
+                                            <div className="mb-4">
+                                                <div className="text-sm font-semibold text-gray-700 mb-2">Notes</div>
+                                                <p className="text-gray-600 text-sm leading-relaxed">
+                                                    {interview.notes}
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        {/* Status Alert for Completed Time */}
+                                        {isCompleted && (
+                                            <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                                                <div className="flex items-center gap-2 text-amber-800">
+                                                    <AlertCircle className="w-4 h-4" />
+                                                    <span className="font-medium">Interview time has completed</span>
+                                                    <span className="text-sm">- Please mark as completed or reschedule</span>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Action Buttons */}
+                                    {(isAuthorizedRecruiter || isJobOwner || (user && user.role === 'OrgAdmin')) && (
+                                        <div className="flex flex-col gap-3 lg:w-48">
+                                            {interview.status === 'scheduled' && (
+                                                <>
+                                                    {isCompleted ? (
+                                                        <>
+                                                            <button
+                                                                onClick={() => handleUpdateInterviewStatus(interview.id, 'completed', `Interview marked as completed by ${user.name}`)}
+                                                                disabled={isUpdating}
+                                                                className="flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md disabled:opacity-50"
+                                                            >
+                                                                <CheckCircle className="w-4 h-4" />
+                                                                Mark as Completed
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleRescheduleInterview(interview)}
+                                                                className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                            >
+                                                                <RefreshCw className="w-4 h-4" />
+                                                                Reschedule Interview
+                                                            </button>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <button
+                                                                onClick={() => handleUpdateInterviewStatus(interview.id, 'completed', `Interview marked as completed by ${user.name}`)}
+                                                                disabled={isUpdating}
+                                                                className="flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md disabled:opacity-50"
+                                                            >
+                                                                <CheckCircle className="w-4 h-4" />
+                                                                Mark Completed
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleRescheduleInterview(interview)}
+                                                                className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                            >
+                                                                <RefreshCw className="w-4 h-4" />
+                                                                Reschedule
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                    <button
+                                                        onClick={() => handleUpdateInterviewStatus(interview.id, 'cancelled', `Interview cancelled by ${user.name}`)}
+                                                        disabled={isUpdating}
+                                                        className="flex items-center justify-center gap-2 px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md disabled:opacity-50"
+                                                    >
+                                                        <XCircle className="w-4 h-4" />
+                                                        Cancel Interview
+                                                    </button>
+                                                </>
+                                            )}
+                                            {interview.status === 'completed' && (
+                                                <button
+                                                    onClick={() => handleRescheduleInterview(interview)}
+                                                    className="flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                >
+                                                    <RefreshCw className="w-4 h-4" />
+                                                    Schedule New Interview
+                                                </button>
+                                            )}
+                                            {interview.status === 'cancelled' && (
+                                                <button
+                                                    onClick={() => handleRescheduleInterview(interview)}
+                                                    className="flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                >
+                                                    <RefreshCw className="w-4 h-4" />
+                                                    Reschedule Interview
+                                                </button>
+                                            )}
+
+                                            {/* Common Actions */}
+                                            <button
+                                                onClick={() => console.log('Contact about interview:', interview)}
+                                                className="flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                            >
+                                                <Mail className="w-4 h-4" />
+                                                Contact Candidate
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        );
+    };
 
     return (
         <>
             <Navbar />
             <Toaster position="top-right" />
+
+            <InterviewModal
+                isOpen={isInterviewModalOpen}
+                onClose={() => setIsInterviewModalOpen(false)}
+                application={application}
+                interviewFormData={interviewFormData}
+                onInterviewFormDataChange={handleInterviewInputChange}
+                availableInterviewers={filteredInterviewers}
+                searchInterviewerQuery={searchInterviewerQuery}
+                onSearchInterviewerQueryChange={setSearchInterviewerQuery}
+                onInterviewerToggle={handleInterviewerToggle}
+                onInterviewSubmit={handleInterviewSubmit}
+                isScheduling={isSchedulingInterview}
+                interviewTypes={interviewTypes}
+                meetingPlatforms={meetingPlatforms}
+                getSelectedInterviewers={getSelectedInterviewers}
+                formatDateTime={formatDateTime}
+            />
+            {/* Assign Test Modal */}
+            <AssignTestModal
+                isOpen={isAssignTestModalOpen}
+                onClose={() => setIsAssignTestModalOpen(false)}
+                application={application}
+                availableTests={availableTests}
+                selectedTests={selectedTests}
+                onSelectedTestsChange={setSelectedTests}
+                testAssignmentSettings={testAssignmentSettings}
+                onTestAssignmentSettingsChange={setTestAssignmentSettings}
+                onConfirmAssignment={handleConfirmTestAssignment}
+                isAssigning={isAssigningTest}
+                isTestAlreadyAssigned={isTestAlreadyAssigned}
+                formatDateTime={formatDateTime}
+            />
+
+            <RescheduleTestModal
+                isOpen={isRescheduleTestModalOpen}
+                onClose={() => {
+                    setIsRescheduleTestModalOpen(false);
+                    setSelectedTestForReschedule(null);
+                }}
+                testAssignment={selectedTestForReschedule}
+                rescheduleSettings={testRescheduleSettings}
+                onRescheduleSettingsChange={setTestRescheduleSettings}
+                onConfirmReschedule={handleConfirmTestReschedule}
+                isRescheduling={isRescheduling}
+                formatDateTime={formatDateTime}
+            />
+
+            {/* Reschedule Interview Modal */}
+            <RescheduleInterviewModal
+                isOpen={isRescheduleInterviewModalOpen}
+                onClose={() => {
+                    setIsRescheduleInterviewModalOpen(false);
+                    setSelectedInterviewForReschedule(null);
+                }}
+                interview={selectedInterviewForReschedule}
+                rescheduleData={interviewRescheduleData}
+                onRescheduleDataChange={handleInterviewRescheduleInputChange}
+                onConfirmReschedule={handleConfirmInterviewReschedule}
+                isRescheduling={isRescheduling}
+                formatDateTime={formatDateTime}
+            />
+
             <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
                 {/* Header */}
                 <div className="bg-white border-b border-gray-200 shadow-sm relative overflow-hidden">
@@ -581,7 +1741,7 @@ export default function RecruiterApplicationDetailsPage() {
                         <div className="flex flex-wrap gap-3 mt-6 pt-6 border-t border-gray-200">
                             <button
                                 onClick={handleDownloadResume}
-                                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-lg hover:shadow-xl"
+                                className="cursor-pointer flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-lg hover:shadow-xl"
                             >
                                 <Download className="w-4 h-4" />
                                 Download Application
@@ -647,6 +1807,7 @@ export default function RecruiterApplicationDetailsPage() {
                             })}
                         </div>
                     </div>
+
                     {/* Tab Content */}
                     <div className="bg-white rounded-2xl border border-gray-200 shadow-lg overflow-hidden">
                         {activeTab === 'actions' && (
@@ -655,9 +1816,19 @@ export default function RecruiterApplicationDetailsPage() {
                                     <h2 className="text-2xl lg:text-3xl font-bold text-gray-900 mb-4">Application Actions</h2>
                                     <p className="text-gray-600 text-lg">
                                         Current Status: <span className={`font-semibold ${getStatusColor(application.status)} px-3 py-1 rounded-full`}>
-                                            {application.status.replace('_', ' ')}
+                                            {application.status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
                                         </span>
                                     </p>
+                                    {/* View-only indicator */}
+                                    {!isAuthorizedRecruiter && !isJobOwner && user?.role !== 'OrgAdmin' && (
+                                        <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                                            <div className="flex items-center gap-2 text-amber-800">
+                                                <Eye className="w-4 h-4" />
+                                                <span className="font-semibold">View Only Mode</span>
+                                                <span className="text-sm">- You can view this application but cannot perform actions</span>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {availableActions.length > 0 ? (
@@ -681,7 +1852,7 @@ export default function RecruiterApplicationDetailsPage() {
                                                         <button
                                                             onClick={action.action}
                                                             disabled={isUpdating}
-                                                            className={`w-full flex items-center justify-center gap-2 px-4 py-3 text-white rounded-lg font-semibold transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed ${action.color}`}
+                                                            className={`cursor-pointer w-full flex items-center justify-center gap-2 px-4 py-3 text-white rounded-lg font-semibold transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed ${action.color}`}
                                                         >
                                                             {isUpdating ? (
                                                                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
@@ -697,7 +1868,7 @@ export default function RecruiterApplicationDetailsPage() {
                                             );
                                         })}
                                     </div>
-                                ) : (
+                                ) : (isAuthorizedRecruiter || isJobOwner || user.role == 'OrgAdmin' &&
                                     <div className="text-center py-12">
                                         <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                                             <CheckCircle className="w-8 h-8 text-gray-400" />
@@ -708,6 +1879,11 @@ export default function RecruiterApplicationDetailsPage() {
                                         </p>
                                     </div>
                                 )}
+
+                                {/* Test Assignments Section */}
+                                <TestAssignmentsSection />
+
+                                <InterviewsSection />
 
                                 {/* Status History Timeline */}
                                 <div className="mt-12">
@@ -776,6 +1952,7 @@ export default function RecruiterApplicationDetailsPage() {
                             </div>
                         )}
 
+                        {/* Other tabs (resume, job, ai-analysis) remain the same */}
                         {activeTab === 'resume' && (
                             <div className="p-6 lg:p-8 space-y-8">
                                 {/* Personal Information */}
@@ -1115,42 +2292,100 @@ export default function RecruiterApplicationDetailsPage() {
                             </div>
                         )}
                     </div>
-                    {/* Confirmation Modal */}
+
                     {isModalOpen && (
                         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
                             <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
                                 <div className="flex items-center gap-3 mb-4">
-                                    <div className="p-2 bg-blue-100 rounded-lg">
-                                        <Send className="w-6 h-6 text-blue-600" />
+                                    <div className={`p-2 rounded-lg ${pendingAction?.newStatus === 'rejected' ? 'bg-red-100' :
+                                        pendingAction?.newStatus === 'hired' ? 'bg-green-100' :
+                                            'bg-blue-100'
+                                        }`}>
+                                        {pendingAction?.newStatus === 'rejected' ? (
+                                            <XCircle className="w-6 h-6 text-red-600" />
+                                        ) : pendingAction?.newStatus === 'hired' ? (
+                                            <CheckCircle className="w-6 h-6 text-green-600" />
+                                        ) : (
+                                            <Send className="w-6 h-6 text-blue-600" />
+                                        )}
                                     </div>
-                                    <h3 className="text-xl font-bold text-gray-900">Confirm Status Change</h3>
+                                    <h3 className="text-xl font-bold text-gray-900">
+                                        {pendingAction?.newStatus === 'shortlisted' && 'Shortlist Candidate'}
+                                        {pendingAction?.newStatus === 'test_scheduled' && 'Assign Test'}
+                                        {pendingAction?.newStatus === 'test_completed' && 'Mark Test Completed'}
+                                        {pendingAction?.newStatus === 'interview_scheduled' && 'Schedule Interview'}
+                                        {pendingAction?.newStatus === 'waiting_for_result' && 'Waiting for Result'}
+                                        {pendingAction?.newStatus === 'hired' && 'Hire Candidate'}
+                                        {pendingAction?.newStatus === 'rejected' && 'Reject Application'}
+                                    </h3>
                                 </div>
 
                                 <div className="mb-6">
                                     <p className="text-gray-600 mb-4">
-                                        You are about to change the status from{' '}
-                                        <span className={`font-semibold ${getStatusColor(application.status)} px-2 py-1 rounded`}>
-                                            {application.status.replace('_', ' ')}
-                                        </span>{' '}
-                                        to{' '}
-                                        <span className={`font-semibold ${getStatusColor(pendingAction?.newStatus)} px-2 py-1 rounded`}>
-                                            {pendingAction?.newStatus.replace('_', ' ')}
-                                        </span>
+                                        {pendingAction?.newStatus === 'shortlisted' && `Are you sure you want to shortlist ${application.applicant_name} for the ${application.job_title} position?`}
+                                        {pendingAction?.newStatus === 'test_scheduled' && `Are you sure you want to assign tests to ${application.applicant_name}?`}
+                                        {pendingAction?.newStatus === 'test_completed' && `Are you sure you want to mark tests as completed for ${application.applicant_name}?`}
+                                        {pendingAction?.newStatus === 'interview_scheduled' && `Are you sure you want to schedule an interview with ${application.applicant_name}?`}
+                                        {pendingAction?.newStatus === 'waiting_for_result' && `Are you sure you want to move ${application.applicant_name} to waiting for result?`}
+                                        {pendingAction?.newStatus === 'hired' && `Are you sure you want to hire ${application.applicant_name} for the ${application.job_title} position?`}
+                                        {pendingAction?.newStatus === 'rejected' && `Are you sure you want to reject ${application.applicant_name}'s application for the ${application.job_title} position?`}
                                     </p>
 
-                                    <div className="mb-4">
-                                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                            Notes (Optional)
-                                        </label>
-                                        <textarea
-                                            value={notes}
-                                            onChange={(e) => setNotes(e.target.value)}
-                                            placeholder="Add notes about this status change..."
-                                            className="w-full h-32 p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                                        />
-                                        <p className="text-xs text-gray-500 mt-1">
-                                            These notes will be saved in the status history.
-                                        </p>
+                                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                        <div className="text-sm text-gray-600">
+                                            <div className="font-semibold mb-2">This action will:</div>
+                                            <ul className="space-y-1 list-disc list-inside">
+                                                {pendingAction?.newStatus === 'shortlisted' && (
+                                                    <>
+                                                        <li>Move candidate to shortlisted pool</li>
+                                                        <li>Notify relevant team members</li>
+                                                        <li>Update application status</li>
+                                                    </>
+                                                )}
+                                                {pendingAction?.newStatus === 'test_scheduled' && (
+                                                    <>
+                                                        <li>Assign selected tests to candidate</li>
+                                                        <li>Send test invitation email</li>
+                                                        <li>Update application status</li>
+                                                    </>
+                                                )}
+                                                {pendingAction?.newStatus === 'test_completed' && (
+                                                    <>
+                                                        <li>Mark test as completed</li>
+                                                        <li>Update candidate progress</li>
+                                                        <li>Notify hiring team</li>
+                                                    </>
+                                                )}
+                                                {pendingAction?.newStatus === 'interview_scheduled' && (
+                                                    <>
+                                                        <li>Schedule interview with candidate</li>
+                                                        <li>Send calendar invitation</li>
+                                                        <li>Update application status</li>
+                                                    </>
+                                                )}
+                                                {pendingAction?.newStatus === 'waiting_for_result' && (
+                                                    <>
+                                                        <li>Move to final decision phase</li>
+                                                        <li>Notify hiring managers</li>
+                                                        <li>Update application status</li>
+                                                    </>
+                                                )}
+                                                {pendingAction?.newStatus === 'hired' && (
+                                                    <>
+                                                        <li>Mark candidate as hired</li>
+                                                        <li>Close this application</li>
+                                                        <li>Send offer letter</li>
+                                                    </>
+                                                )}
+                                                {pendingAction?.newStatus === 'rejected' && (
+                                                    <>
+                                                        <li>Reject the application</li>
+                                                        <li>Send rejection notification</li>
+                                                        <li>Close this application</li>
+                                                    </>
+                                                )}
+                                            </ul>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -1158,14 +2393,19 @@ export default function RecruiterApplicationDetailsPage() {
                                     <button
                                         onClick={closeModal}
                                         disabled={isUpdating}
-                                        className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium disabled:opacity-50"
+                                        className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium disabled:opacity-50 transition-colors"
                                     >
                                         Cancel
                                     </button>
                                     <button
                                         onClick={confirmAction}
                                         disabled={isUpdating}
-                                        className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className={`px-6 py-2 text-white rounded-lg font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${pendingAction?.newStatus === 'rejected'
+                                            ? 'bg-red-600 hover:bg-red-700'
+                                            : pendingAction?.newStatus === 'hired'
+                                                ? 'bg-green-600 hover:bg-green-700'
+                                                : 'bg-indigo-600 hover:bg-indigo-700'
+                                            }`}
                                     >
                                         {isUpdating ? (
                                             <div className="flex items-center gap-2">
@@ -1173,7 +2413,15 @@ export default function RecruiterApplicationDetailsPage() {
                                                 Updating...
                                             </div>
                                         ) : (
-                                            'Confirm Change'
+                                            <>
+                                                {pendingAction?.newStatus === 'shortlisted' && 'Shortlist Candidate'}
+                                                {pendingAction?.newStatus === 'test_scheduled' && 'Assign Tests'}
+                                                {pendingAction?.newStatus === 'test_completed' && 'Mark Completed'}
+                                                {pendingAction?.newStatus === 'interview_scheduled' && 'Schedule Interview'}
+                                                {pendingAction?.newStatus === 'waiting_for_result' && 'Move to Waiting'}
+                                                {pendingAction?.newStatus === 'hired' && 'Hire Candidate'}
+                                                {pendingAction?.newStatus === 'rejected' && 'Reject Application'}
+                                            </>
                                         )}
                                     </button>
                                 </div>
@@ -1181,8 +2429,1068 @@ export default function RecruiterApplicationDetailsPage() {
                         </div>
                     )}
                 </div>
-            </div >
+            </div>
             <Footer />
         </>
     );
 }
+
+// AssignTestModal component remains exactly the same as in your original code
+const AssignTestModal = ({
+    isOpen,
+    onClose,
+    application,
+    availableTests,
+    selectedTests,
+    onSelectedTestsChange,
+    testAssignmentSettings,
+    onTestAssignmentSettingsChange,
+    onConfirmAssignment,
+    isAssigning,
+    isTestAlreadyAssigned,
+    formatDateTime
+}) => {
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-lg flex items-center justify-center z-50 p-4 animate-fadeIn">
+            <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                {/* Header */}
+                <div className="p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-blue-100 rounded-lg">
+                                <Zap className="w-6 h-6 text-blue-600" />
+                            </div>
+                            <div>
+                                <h3 className="text-xl font-bold text-gray-900">Assign Tests to Candidate</h3>
+                                <p className="text-gray-600 text-sm mt-1">
+                                    {application.applicant_name} - {application.job_title}
+                                </p>
+                                <p className="text-blue-600 text-sm mt-1">
+                                    {selectedTests.size} test(s) selected
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={onClose}
+                            className="cursor-pointer p-2 text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                            <XCircle className="w-6 h-6" />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Content - rest of your modal content remains exactly the same */}
+                <div className="p-6 space-y-6">
+                    {/* Test Selection */}
+                    <div>
+                        <div className="flex items-center justify-between mb-3">
+                            <label className="block text-sm font-semibold text-gray-900">
+                                Select Tests *
+                            </label>
+                            <div className="flex items-center gap-4">
+                                <button
+                                    onClick={() => {
+                                        if (selectedTests.size === availableTests.length) {
+                                            onSelectedTestsChange(new Set());
+                                        } else {
+                                            onSelectedTestsChange(new Set(availableTests.map(test => test.id)));
+                                        }
+                                    }}
+                                    className="cursor-pointer text-sm text-blue-600 hover:text-blue-700 font-medium"
+                                >
+                                    {selectedTests.size === availableTests.length ? 'Deselect All' : 'Select All'}
+                                </button>
+                                <span className="text-sm text-gray-500">
+                                    {selectedTests.size} of {availableTests.length} selected
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="max-h-60 overflow-y-auto border border-gray-200 rounded-lg">
+                            {availableTests.length === 0 ? (
+                                <div className="text-center py-8 text-gray-500">
+                                    <FileText className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                                    <p>No tests available</p>
+                                    <p className="text-sm">Create tests in the Tests section first</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-2 p-2">
+                                    {availableTests.map((test) => {
+                                        const isAlreadyAssigned = isTestAlreadyAssigned(test.id);
+                                        const isSelected = selectedTests.has(test.id);
+
+                                        return (
+                                            <div
+                                                key={test.id}
+                                                onClick={() => {
+                                                    const newSelectedTests = new Set(selectedTests);
+                                                    if (newSelectedTests.has(test.id)) {
+                                                        newSelectedTests.delete(test.id);
+                                                    } else {
+                                                        newSelectedTests.add(test.id);
+                                                    }
+                                                    onSelectedTestsChange(newSelectedTests);
+                                                }}
+                                                className={`cursor-pointer p-4 rounded-lg border-2 transition-all duration-200 ${isSelected
+                                                    ? 'border-blue-500 bg-blue-50'
+                                                    : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                                    } ${isAlreadyAssigned ? 'relative overflow-hidden' : ''}`}
+                                            >
+                                                {isAlreadyAssigned && (
+                                                    <div className="absolute top-2 right-2">
+                                                        <div className="bg-amber-100 text-amber-800 px-2 py-1 rounded-full text-xs font-medium border border-amber-200">
+                                                            Already Assigned
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                <div className="flex items-start justify-between">
+                                                    <div className="flex items-start gap-3 flex-1">
+                                                        <div className="flex items-center justify-center w-5 h-5 mt-0.5">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isSelected}
+                                                                onChange={() => { }}
+                                                                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
+                                                            />
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            <div className="flex items-center gap-2 mb-1">
+                                                                <h4 className="font-semibold text-gray-900">{test.title}</h4>
+                                                                {isAlreadyAssigned && (
+                                                                    <span className="text-xs text-amber-600 bg-amber-100 px-2 py-1 rounded-full">
+                                                                        Will be rescheduled
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <div className="flex items-center gap-4 text-sm text-gray-600">
+                                                                <span className="flex items-center gap-1">
+                                                                    <Clock className="w-4 h-4" />
+                                                                    {test.duration_minutes} mins
+                                                                </span>
+                                                                <span className="flex items-center gap-1">
+                                                                    <FileText className="w-4 h-4" />
+                                                                    {test.question_count || 'N/A'} questions
+                                                                </span>
+                                                                <span className="flex items-center gap-1">
+                                                                    <Star className="w-4 h-4" />
+                                                                    {test.passing_marks}% to pass
+                                                                </span>
+                                                            </div>
+                                                            {test.description && (
+                                                                <p className="text-sm text-gray-600 mt-2 line-clamp-2">
+                                                                    {test.description}
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    {isSelected && (
+                                                        <CheckCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                                                    )}
+                                                </div>
+
+                                                {isAlreadyAssigned && isSelected && (
+                                                    <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                                                        <div className="flex items-center gap-2 text-amber-800 text-sm">
+                                                            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                                                            <span className="font-medium">Note:</span>
+                                                            <span>This test is already assigned. Reassigning will update the due date and proctoring settings.</span>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Selected Tests Summary */}
+                    {selectedTests.size > 0 && (
+                        <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                            <h4 className="font-semibold text-blue-900 mb-3 flex items-center gap-2">
+                                <CheckCircle className="w-5 h-5" />
+                                Selected Tests Summary ({selectedTests.size} test(s))
+                            </h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                                {Array.from(selectedTests).map(testId => {
+                                    const test = availableTests.find(t => t.id === testId);
+                                    if (!test) return null;
+                                    const isAlreadyAssigned = isTestAlreadyAssigned(test.id);
+
+                                    return (
+                                        <div key={test.id} className="bg-white p-3 rounded-lg border border-blue-100">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="font-medium text-blue-900">{test.title}</span>
+                                                {isAlreadyAssigned && (
+                                                    <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-full">
+                                                        Rescheduling
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="text-xs text-gray-600 space-y-1">
+                                                <div>Duration: {test.duration_minutes} mins</div>
+                                                <div>Questions: {test.question_count || 'N/A'}</div>
+                                                <div>Passing: {test.passing_marks}%</div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Test Dates */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-900 mb-2">
+                                Test Start Date & Time *
+                            </label>
+                            <input
+                                type="datetime-local"
+                                value={testAssignmentSettings.testStartDate}
+                                onChange={(e) => {
+                                    const newStartDate = e.target.value;
+                                    onTestAssignmentSettingsChange(prev => ({
+                                        ...prev,
+                                        testStartDate: newStartDate,
+                                        testEndDate: prev.testEndDate
+                                    }));
+                                }}
+                                min={new Date().toISOString().slice(0, 16)}
+                                className="cursor-pointer w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-900 mb-2">
+                                Test End Date & Time *
+                            </label>
+                            <input
+                                type="datetime-local"
+                                value={testAssignmentSettings.testEndDate}
+                                onChange={(e) => onTestAssignmentSettingsChange(prev => ({
+                                    ...prev,
+                                    testEndDate: e.target.value
+                                }))}
+                                min={testAssignmentSettings.testStartDate || new Date().toISOString().slice(0, 16)}
+                                className="cursor-pointer w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Duration Validation */}
+                    {testAssignmentSettings.testStartDate && testAssignmentSettings.testEndDate && selectedTests.size > 0 && (
+                        <div className="text-sm p-3 bg-gray-50 rounded-lg">
+                            <p className="text-gray-600">
+                                All selected tests will be available from {formatDateTime(testAssignmentSettings.testStartDate)} to {formatDateTime(testAssignmentSettings.testEndDate)}
+                            </p>
+                        </div>
+                    )}
+
+                    {/* Proctoring Settings */}
+                    <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                            <label className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                                <Eye className="w-4 h-4 text-purple-600" />
+                                Enable Proctoring
+                            </label>
+                            <button
+                                type="button"
+                                onClick={() => onTestAssignmentSettingsChange(prev => ({
+                                    ...prev,
+                                    isProctored: !prev.isProctored
+                                }))}
+                                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${testAssignmentSettings.isProctored ? 'bg-blue-600' : 'bg-gray-200'
+                                    }`}
+                            >
+                                <span
+                                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${testAssignmentSettings.isProctored ? 'translate-x-5' : 'translate-x-0'
+                                        }`}
+                                />
+                            </button>
+                        </div>
+
+                        {testAssignmentSettings.isProctored && (
+                            <div className="space-y-3 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                <h4 className="text-sm font-semibold text-gray-900 mb-2">Proctoring Settings</h4>
+                                {[
+                                    { key: 'fullscreen_required', label: 'Fullscreen Required' },
+                                    { key: 'tab_switching_detection', label: 'Tab Switching Detection' },
+                                    { key: 'copy_paste_prevention', label: 'Copy/Paste Prevention' }
+                                ].map((setting) => (
+                                    <div key={setting.key} className="flex items-center justify-between">
+                                        <span className="text-sm text-gray-700">{setting.label}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => onTestAssignmentSettingsChange(prev => ({
+                                                ...prev,
+                                                proctoringSettings: {
+                                                    ...prev.proctoringSettings,
+                                                    [setting.key]: !prev.proctoringSettings[setting.key]
+                                                }
+                                            }))}
+                                            className={`relative inline-flex h-4 w-8 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${testAssignmentSettings.proctoringSettings[setting.key] ? 'bg-green-500' : 'bg-gray-300'
+                                                }`}
+                                        >
+                                            <span
+                                                className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${testAssignmentSettings.proctoringSettings[setting.key] ? 'translate-x-4' : 'translate-x-0'
+                                                    }`}
+                                            />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Footer */}
+                <div className="p-6 border-t border-gray-200 bg-gray-50 sticky bottom-0">
+                    <div className="flex items-center justify-between">
+                        <button
+                            onClick={onClose}
+                            className="cursor-pointer px-4 py-2 text-gray-600 hover:text-gray-800 font-medium transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <div className="flex items-center gap-4">
+                            <span className="text-sm text-gray-600">
+                                {selectedTests.size} test(s) selected
+                            </span>
+                            <button
+                                onClick={onConfirmAssignment}
+                                disabled={isAssigning || selectedTests.size === 0 || !testAssignmentSettings.testStartDate || !testAssignmentSettings.testEndDate}
+                                className="cursor-pointer flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isAssigning ? (
+                                    <>
+                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                        Assigning {selectedTests.size} Test(s)...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Send className="w-4 h-4" />
+                                        Assign {selectedTests.size} Test(s)
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// Move this outside, before the main component's return
+const InterviewModal = ({
+    isOpen,
+    onClose,
+    application,
+    interviewFormData,
+    onInterviewFormDataChange,
+    availableInterviewers,
+    searchInterviewerQuery,
+    onSearchInterviewerQueryChange,
+    onInterviewerToggle,
+    onInterviewSubmit,
+    isScheduling,
+    interviewTypes,
+    meetingPlatforms,
+    getSelectedInterviewers,
+    formatDateTime
+}) => {
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                {/* Header */}
+                <div className="p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-blue-100 rounded-lg">
+                                <Calendar className="w-6 h-6 text-blue-600" />
+                            </div>
+                            <div>
+                                <h3 className="text-xl font-bold text-gray-900">Schedule Interview</h3>
+                                <p className="text-gray-600 text-sm mt-1">
+                                    {application.applicant_name} - {application.job_title}
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={onClose}
+                            className="cursor-pointer p-2 text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                            <X className="w-6 h-6" />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Application Info */}
+                <div className="p-6 bg-gray-50 border-b border-gray-200">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                        <div className="flex items-center gap-3">
+                            <User className="w-4 h-4 text-gray-600" />
+                            <div>
+                                <div className="font-semibold text-gray-900">{application.applicant_name}</div>
+                                <div className="text-gray-600">Candidate</div>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <Mail className="w-4 h-4 text-gray-600" />
+                            <div>
+                                <div className="font-semibold text-gray-900">{application.applicant_email}</div>
+                                <div className="text-gray-600">Email</div>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <Building className="w-4 h-4 text-gray-600" />
+                            <div>
+                                <div className="font-semibold text-gray-900">{application.job_title}</div>
+                                <div className="text-gray-600">Position</div>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <MapPin className="w-4 h-4 text-gray-600" />
+                            <div>
+                                <div className="font-semibold text-gray-900">{application.location}</div>
+                                <div className="text-gray-600">Location</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Form */}
+                <form onSubmit={onInterviewSubmit} className="p-6 space-y-6">
+                    {/* Date & Time */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                <Calendar className="w-4 h-4" />
+                                Interview Date & Time *
+                            </label>
+                            <input
+                                type="datetime-local"
+                                value={interviewFormData.scheduledAt}
+                                onChange={(e) => onInterviewFormDataChange('scheduledAt', e.target.value)}
+                                min={new Date().toISOString().slice(0, 16)}
+                                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                required
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                <Clock className="w-4 h-4" />
+                                Duration (minutes) *
+                            </label>
+                            <select
+                                value={interviewFormData.durationMinutes}
+                                onChange={(e) => onInterviewFormDataChange('durationMinutes', parseInt(e.target.value))}
+                                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                            >
+                                <option value={30}>30 minutes</option>
+                                <option value={45}>45 minutes</option>
+                                <option value={60}>60 minutes</option>
+                                <option value={90}>90 minutes</option>
+                                <option value={120}>120 minutes</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    {/* Interview Type & Platform */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-900 mb-2">
+                                Interview Type *
+                            </label>
+                            <select
+                                value={interviewFormData.interviewType}
+                                onChange={(e) => onInterviewFormDataChange('interviewType', e.target.value)}
+                                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                            >
+                                {interviewTypes.map(type => (
+                                    <option key={type.value} value={type.value}>
+                                        {type.label}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                <Video className="w-4 h-4" />
+                                Meeting Platform *
+                            </label>
+                            <select
+                                value={interviewFormData.meetingPlatform}
+                                onChange={(e) => onInterviewFormDataChange('meetingPlatform', e.target.value)}
+                                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                            >
+                                {meetingPlatforms.map(platform => (
+                                    <option key={platform.value} value={platform.value}>
+                                        {platform.label}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+
+                    {/* Meeting Details */}
+                    {interviewFormData.meetingPlatform === 'in_person' ? (
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                <MapPin className="w-4 h-4" />
+                                Meeting Location *
+                            </label>
+                            <input
+                                type="text"
+                                value={interviewFormData.meetingLocation}
+                                onChange={(e) => onInterviewFormDataChange('meetingLocation', e.target.value)}
+                                placeholder="Enter meeting room or address"
+                                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                required
+                            />
+                        </div>
+                    ) : interviewFormData.meetingPlatform !== 'phone' ? (
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                <Video className="w-4 h-4" />
+                                Meeting Link *
+                            </label>
+                            <input
+                                type="url"
+                                value={interviewFormData.meetingLink}
+                                onChange={(e) => onInterviewFormDataChange('meetingLink', e.target.value)}
+                                placeholder="Enter meeting URL"
+                                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                required
+                            />
+                        </div>
+                    ) : null}
+
+                    {/* Interviewers Selection */}
+                    <div>
+                        <label className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                            <Users className="w-4 h-4" />
+                            Select Interviewers *
+                        </label>
+
+                        {/* Search */}
+                        <input
+                            type="text"
+                            value={searchInterviewerQuery}
+                            onChange={(e) => onSearchInterviewerQueryChange(e.target.value)}
+                            placeholder="Search interviewers by name or email..."
+                            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors mb-3"
+                        />
+
+                        {/* Selected Interviewers */}
+                        {getSelectedInterviewers().length > 0 && (
+                            <div className="mb-3">
+                                <div className="text-sm font-medium text-gray-700 mb-2">Selected Interviewers:</div>
+                                <div className="flex flex-wrap gap-2">
+                                    {getSelectedInterviewers().map(interviewer => (
+                                        <div
+                                            key={interviewer.id}
+                                            className="flex items-center gap-2 bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm"
+                                        >
+                                            <User className="w-3 h-3" />
+                                            {interviewer.name}
+                                            <button
+                                                type="button"
+                                                onClick={() => onInterviewerToggle(interviewer.id)}
+                                                className="text-blue-600 hover:text-blue-800"
+                                            >
+                                                <X className="w-3 h-3" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Interviewers List */}
+                        <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg">
+                            {availableInterviewers.length === 0 ? (
+                                <div className="text-center py-4 text-gray-500">
+                                    No interviewers found
+                                </div>
+                            ) : (
+                                <div className="space-y-1 p-2">
+                                    {availableInterviewers.map(interviewer => (
+                                        <div
+                                            key={interviewer.id}
+                                            onClick={() => onInterviewerToggle(interviewer.id)}
+                                            className={`cursor-pointer p-3 rounded-lg border-2 transition-all duration-200 ${interviewFormData.interviewers.includes(interviewer.id)
+                                                ? 'border-blue-500 bg-blue-50'
+                                                : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                                }`}
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="flex items-center justify-center w-5 h-5">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={interviewFormData.interviewers.includes(interviewer.id)}
+                                                            onChange={() => { }}
+                                                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <div className="font-medium text-gray-900">
+                                                            {interviewer.name}
+                                                        </div>
+                                                        <div className="text-sm text-gray-600">
+                                                            {interviewer.email} • {interviewer.role}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                {interviewFormData.interviewers.includes(interviewer.id) && (
+                                                    <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Notes */}
+                    <div>
+                        <label className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                            <FileText className="w-4 h-4" />
+                            Additional Notes
+                        </label>
+                        <textarea
+                            value={interviewFormData.notes}
+                            onChange={(e) => onInterviewFormDataChange('notes', e.target.value)}
+                            placeholder="Add any special instructions, agenda items, or notes for the interview..."
+                            rows={3}
+                            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors resize-none"
+                        />
+                    </div>
+
+                    {/* Summary */}
+                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <h4 className="font-semibold text-gray-900 mb-2">Interview Summary</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-600">
+                            <div><strong>Type:</strong> {interviewTypes.find(t => t.value === interviewFormData.interviewType)?.label}</div>
+                            <div><strong>Platform:</strong> {meetingPlatforms.find(p => p.value === interviewFormData.meetingPlatform)?.label}</div>
+                            <div><strong>Duration:</strong> {interviewFormData.durationMinutes} minutes</div>
+                            <div><strong>Interviewers:</strong> {getSelectedInterviewers().length} selected</div>
+                        </div>
+                    </div>
+
+                    {/* Footer */}
+                    <div className="flex items-center justify-between pt-4 border-t border-gray-200">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={isScheduling || !interviewFormData.scheduledAt || interviewFormData.interviewers.length === 0}
+                            className="flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {isScheduling ? (
+                                <>
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                    Scheduling...
+                                </>
+                            ) : (
+                                <>
+                                    <Calendar className="w-4 h-4" />
+                                    Schedule Interview
+                                </>
+                            )}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+};
+
+const RescheduleTestModal = ({
+    isOpen,
+    onClose,
+    testAssignment,
+    rescheduleSettings,
+    onRescheduleSettingsChange,
+    onConfirmReschedule,
+    isRescheduling,
+    formatDateTime
+}) => {
+    if (!isOpen || !testAssignment) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-lg flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                {/* Header */}
+                <div className="p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-blue-100 rounded-lg">
+                                <RefreshCw className="w-6 h-6 text-blue-600" />
+                            </div>
+                            <div>
+                                <h3 className="text-xl font-bold text-gray-900">Reschedule Test</h3>
+                                <p className="text-gray-600 text-sm mt-1">
+                                    {testAssignment.test_title}
+                                </p>
+                                <p className="text-blue-600 text-sm mt-1">
+                                    Current window: {formatDateTime(testAssignment.test_start_date)} to {formatDateTime(testAssignment.test_end_date)}
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={onClose}
+                            className="cursor-pointer p-2 text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                            <X className="w-6 h-6" />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Content */}
+                <div className="p-6 space-y-6">
+                    {/* Test Details */}
+                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <h4 className="font-semibold text-gray-900 mb-3">Test Details</h4>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                                <span className="text-gray-600">Duration:</span>
+                                <span className="font-semibold ml-2">{testAssignment.duration_minutes} mins</span>
+                            </div>
+                            <div>
+                                <span className="text-gray-600">Current Status:</span>
+                                <span className="font-semibold ml-2 capitalize">{testAssignment.status}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* New Test Dates */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-900 mb-2">
+                                New Start Date & Time *
+                            </label>
+                            <input
+                                type="datetime-local"
+                                value={rescheduleSettings.testStartDate}
+                                onChange={(e) => onRescheduleSettingsChange({
+                                    ...rescheduleSettings,
+                                    testStartDate: e.target.value
+                                })}
+                                min={new Date().toISOString().slice(0, 16)}
+                                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                required
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-900 mb-2">
+                                New End Date & Time *
+                            </label>
+                            <input
+                                type="datetime-local"
+                                value={rescheduleSettings.testEndDate}
+                                onChange={(e) => onRescheduleSettingsChange({
+                                    ...rescheduleSettings,
+                                    testEndDate: e.target.value
+                                })}
+                                min={rescheduleSettings.testStartDate || new Date().toISOString().slice(0, 16)}
+                                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                required
+                            />
+                        </div>
+                    </div>
+
+                    {/* Duration Validation */}
+                    {rescheduleSettings.testStartDate && rescheduleSettings.testEndDate && (
+                        <div className="text-sm p-3 bg-blue-50 rounded-lg border border-blue-200">
+                            <p className="text-blue-600">
+                                Test will be available from {formatDateTime(rescheduleSettings.testStartDate)} to {formatDateTime(rescheduleSettings.testEndDate)}
+                            </p>
+                        </div>
+                    )}
+
+                    {/* Proctoring Settings */}
+                    <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                            <label className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                                <Eye className="w-4 h-4 text-purple-600" />
+                                Enable Proctoring
+                            </label>
+                            <button
+                                type="button"
+                                onClick={() => onRescheduleSettingsChange({
+                                    ...rescheduleSettings,
+                                    isProctored: !rescheduleSettings.isProctored
+                                })}
+                                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${rescheduleSettings.isProctored ? 'bg-blue-600' : 'bg-gray-200'
+                                    }`}
+                            >
+                                <span
+                                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${rescheduleSettings.isProctored ? 'translate-x-5' : 'translate-x-0'
+                                        }`}
+                                />
+                            </button>
+                        </div>
+
+                        {rescheduleSettings.isProctored && (
+                            <div className="space-y-3 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                <h4 className="text-sm font-semibold text-gray-900 mb-2">Proctoring Settings</h4>
+                                {[
+                                    { key: 'fullscreen_required', label: 'Fullscreen Required' },
+                                    { key: 'tab_switching_detection', label: 'Tab Switching Detection' },
+                                    { key: 'copy_paste_prevention', label: 'Copy/Paste Prevention' }
+                                ].map((setting) => (
+                                    <div key={setting.key} className="flex items-center justify-between">
+                                        <span className="text-sm text-gray-700">{setting.label}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => onRescheduleSettingsChange({
+                                                ...rescheduleSettings,
+                                                proctoringSettings: {
+                                                    ...rescheduleSettings.proctoringSettings,
+                                                    [setting.key]: !rescheduleSettings.proctoringSettings[setting.key]
+                                                }
+                                            })}
+                                            className={`relative inline-flex h-4 w-8 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${rescheduleSettings.proctoringSettings[setting.key] ? 'bg-green-500' : 'bg-gray-300'
+                                                }`}
+                                        >
+                                            <span
+                                                className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${rescheduleSettings.proctoringSettings[setting.key] ? 'translate-x-4' : 'translate-x-0'
+                                                    }`}
+                                            />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Important Note */}
+                    <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+                        <div className="flex items-start gap-3">
+                            <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                            <div>
+                                <h4 className="font-semibold text-amber-900 mb-1">Important</h4>
+                                <p className="text-amber-800 text-sm">
+                                    Rescheduling this test will reset the candidate's progress and allow them to retake the test
+                                    within the new time window. Any previous attempts will be archived.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Footer */}
+                <div className="p-6 border-t border-gray-200 bg-gray-50 sticky bottom-0">
+                    <div className="flex items-center justify-between">
+                        <button
+                            onClick={onClose}
+                            className="cursor-pointer px-4 py-2 text-gray-600 hover:text-gray-800 font-medium transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={onConfirmReschedule}
+                            disabled={isRescheduling || !rescheduleSettings.testStartDate || !rescheduleSettings.testEndDate}
+                            className="cursor-pointer flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {isRescheduling ? (
+                                <>
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                    Rescheduling...
+                                </>
+                            ) : (
+                                <>
+                                    <RefreshCw className="w-4 h-4" />
+                                    Reschedule Test
+                                </>
+                            )}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const RescheduleInterviewModal = ({
+    isOpen,
+    onClose,
+    interview,
+    rescheduleData,
+    onRescheduleDataChange,
+    onConfirmReschedule,
+    isRescheduling,
+    formatDateTime
+}) => {
+    if (!isOpen || !interview) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-lg flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                {/* Header */}
+                <div className="p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-purple-100 rounded-lg">
+                                <RefreshCw className="w-6 h-6 text-purple-600" />
+                            </div>
+                            <div>
+                                <h3 className="text-xl font-bold text-gray-900">Reschedule Interview</h3>
+                                <p className="text-gray-600 text-sm mt-1">
+                                    {interviewTypes.find(t => t.value === interview.interview_type)?.label || 'Interview'}
+                                </p>
+                                <p className="text-purple-600 text-sm mt-1">
+                                    Current time: {formatDateTime(interview.scheduled_at)}
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={onClose}
+                            className="cursor-pointer p-2 text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                            <X className="w-6 h-6" />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Content */}
+                <div className="p-6 space-y-6">
+                    {/* Interview Details */}
+                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <h4 className="font-semibold text-gray-900 mb-3">Interview Details</h4>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                                <span className="text-gray-600">Current Duration:</span>
+                                <span className="font-semibold ml-2">{interview.duration_minutes} mins</span>
+                            </div>
+                            <div>
+                                <span className="text-gray-600">Platform:</span>
+                                <span className="font-semibold ml-2 capitalize">{interview.meeting_platform?.replace('_', ' ') || 'N/A'}</span>
+                            </div>
+                            <div>
+                                <span className="text-gray-600">Interviewers:</span>
+                                <span className="font-semibold ml-2">{interview.interviewer_names?.length || 0}</span>
+                            </div>
+                            <div>
+                                <span className="text-gray-600">Current Status:</span>
+                                <span className="font-semibold ml-2 capitalize">{interview.status}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* New Interview Date & Time */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                <Calendar className="w-4 h-4" />
+                                New Date & Time *
+                            </label>
+                            <input
+                                type="datetime-local"
+                                value={rescheduleData.scheduledAt}
+                                onChange={(e) => onRescheduleDataChange('scheduledAt', e.target.value)}
+                                min={new Date().toISOString().slice(0, 16)}
+                                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                required
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                <Clock className="w-4 h-4" />
+                                Duration (minutes) *
+                            </label>
+                            <select
+                                value={rescheduleData.durationMinutes}
+                                onChange={(e) => onRescheduleDataChange('durationMinutes', parseInt(e.target.value))}
+                                className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                            >
+                                <option value={30}>30 minutes</option>
+                                <option value={45}>45 minutes</option>
+                                <option value={60}>60 minutes</option>
+                                <option value={90}>90 minutes</option>
+                                <option value={120}>120 minutes</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    {/* Reschedule Notes */}
+                    <div>
+                        <label className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                            <FileText className="w-4 h-4" />
+                            Reschedule Notes (Optional)
+                        </label>
+                        <textarea
+                            value={rescheduleData.notes}
+                            onChange={(e) => onRescheduleDataChange('notes', e.target.value)}
+                            placeholder="Add reason for rescheduling or any additional notes..."
+                            rows={3}
+                            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors resize-none"
+                        />
+                    </div>
+
+                    {/* Important Note */}
+                    <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+                        <div className="flex items-start gap-3">
+                            <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                            <div>
+                                <h4 className="font-semibold text-amber-900 mb-1">Important</h4>
+                                <p className="text-amber-800 text-sm">
+                                    Rescheduling this interview will notify the candidate and all interviewers about the new time.
+                                    The interview status will be updated to "scheduled".
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Footer */}
+                <div className="p-6 border-t border-gray-200 bg-gray-50 sticky bottom-0">
+                    <div className="flex items-center justify-between">
+                        <button
+                            onClick={onClose}
+                            className="cursor-pointer px-4 py-2 text-gray-600 hover:text-gray-800 font-medium transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={onConfirmReschedule}
+                            disabled={isRescheduling || !rescheduleData.scheduledAt}
+                            className="cursor-pointer flex items-center gap-2 px-6 py-2 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {isRescheduling ? (
+                                <>
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                    Rescheduling...
+                                </>
+                            ) : (
+                                <>
+                                    <RefreshCw className="w-4 h-4" />
+                                    Reschedule Interview
+                                </>
+                            )}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};

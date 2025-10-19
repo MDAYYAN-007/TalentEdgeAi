@@ -3,7 +3,7 @@
 
 import { query } from '@/actions/db';
 
-export async function getApplicantsForTestAssignment(orgId, currentTestId) {
+export async function getApplicantsForTestAssignment(orgId, currentTestId,userId) {
     try {
         const sql = `
             SELECT 
@@ -41,11 +41,12 @@ export async function getApplicantsForTestAssignment(orgId, currentTestId) {
             WHERE j.org_id = $1 
             AND a.status IN ('shortlisted', 'test_scheduled')
             AND j.status = 'Active'
+            AND $3 = ANY(j.assigned_recruiters)
             ORDER BY a.resume_score DESC, a.applied_at DESC
         `;
 
-        const result = await query(sql, [orgId, currentTestId]);
-        
+        const result = await query(sql, [orgId, currentTestId,userId]);
+
         return {
             success: true,
             applicants: result.rows

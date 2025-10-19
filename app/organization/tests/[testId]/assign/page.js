@@ -1,4 +1,3 @@
-// app/organization/tests/[testId]/assign/page.js
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -22,7 +21,6 @@ export default function AssignTestPage() {
     const params = useParams();
     const testId = params.testId;
 
-    // State Management
     const [user, setUser] = useState(null);
     const [test, setTest] = useState(null);
     const [applicants, setApplicants] = useState([]);
@@ -31,7 +29,6 @@ export default function AssignTestPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [assignLoading, setAssignLoading] = useState(false);
 
-    // Filter States
     const [searchTerm, setSearchTerm] = useState('');
     const [filters, setFilters] = useState({
         jobTitles: [],
@@ -43,7 +40,6 @@ export default function AssignTestPage() {
         alreadyAssigned: 'all'
     });
 
-    // UI States
     const [testStartDate, setTestStartDate] = useState('');
     const [testEndDate, setTestEndDate] = useState('');
     const [proctoringSettings, setProctoringSettings] = useState({
@@ -56,7 +52,6 @@ export default function AssignTestPage() {
     });
     const [isFiltersOpen, setIsFiltersOpen] = useState(false);
 
-    // Authentication
     useEffect(() => {
         const token = localStorage.getItem('token');
         if (!token) {
@@ -86,7 +81,6 @@ export default function AssignTestPage() {
         }
     }, [router]);
 
-    // Fetch test details and applicants
     useEffect(() => {
         if (user?.orgId && testId) {
             fetchTestAndApplicants();
@@ -102,7 +96,7 @@ export default function AssignTestPage() {
             }
             setTest(testResult.test);
 
-            const applicantsResult = await getApplicantsForTestAssignment(user.orgId, testId);
+            const applicantsResult = await getApplicantsForTestAssignment(user.orgId, testId, user.id);
             if (!applicantsResult.success) {
                 throw new Error(applicantsResult.message);
             }
@@ -116,7 +110,6 @@ export default function AssignTestPage() {
         }
     };
 
-    // Filter applicants based on search and filters
     useEffect(() => {
         let filtered = applicants;
 
@@ -383,138 +376,140 @@ export default function AssignTestPage() {
                     </div>
 
                     {/* Assignment Settings - Always Visible */}
-                    <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-lg border border-gray-200 mb-4 sm:mb-6">
-                        <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 sm:mb-4 flex items-center gap-2">
-                            <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
-                            Assignment Settings
-                        </h3>
+                    {applicants.length > 0 && (
+                        <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-lg border border-gray-200 mb-4 sm:mb-6">
+                            <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 sm:mb-4 flex items-center gap-2">
+                                <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600" />
+                                Assignment Settings
+                            </h3>
 
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-                            <div className="space-y-4">
-                                {/* Test Start Date */}
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-900 mb-1 sm:mb-2">
-                                        Test Start Date & Time *
-                                    </label>
-                                    <input
-                                        type="datetime-local"
-                                        value={testStartDate}
-                                        onChange={(e) => {
-                                            setTestStartDate(e.target.value);
-                                            if (e.target.value && test) {
-                                                const start = new Date(e.target.value);
-                                                const end = new Date(start.getTime() + (test.duration_minutes + 5) * 60 * 1000);
-                                                setTestEndDate(end.toISOString().slice(0, 16));
-                                            }
-                                        }}
-                                        min={new Date().toISOString().slice(0, 16)}
-                                        className="w-full px-3 py-2 text-sm sm:text-base border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
-                                    />
-                                    <p className="text-xs text-gray-500 mt-1">
-                                        When applicants can start taking the test
-                                    </p>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                                <div className="space-y-4">
+                                    {/* Test Start Date */}
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-900 mb-1 sm:mb-2">
+                                            Test Start Date & Time *
+                                        </label>
+                                        <input
+                                            type="datetime-local"
+                                            value={testStartDate}
+                                            onChange={(e) => {
+                                                setTestStartDate(e.target.value);
+                                                if (e.target.value && test) {
+                                                    const start = new Date(e.target.value);
+                                                    const end = new Date(start.getTime() + (test.duration_minutes + 5) * 60 * 1000);
+                                                    setTestEndDate(end.toISOString().slice(0, 16));
+                                                }
+                                            }}
+                                            min={new Date().toISOString().slice(0, 16)}
+                                            className="w-full px-3 py-2 text-sm sm:text-base border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                        />
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            When applicants can start taking the test
+                                        </p>
+                                    </div>
+
+                                    {/* Test End Date */}
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-900 mb-1 sm:mb-2">
+                                            Test End Date & Time *
+                                        </label>
+                                        <input
+                                            type="datetime-local"
+                                            value={testEndDate}
+                                            onChange={(e) => setTestEndDate(e.target.value)}
+                                            min={testStartDate ? new Date(new Date(testStartDate).getTime() + (test.duration_minutes + 5) * 60 * 1000).toISOString().slice(0, 16) : new Date().toISOString().slice(0, 16)}
+                                            className="w-full px-3 py-2 text-sm sm:text-base border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                        />
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Last date/time to complete the test
+                                        </p>
+
+                                        {testStartDate && testEndDate && test && (
+                                            <div className="mt-2">
+                                                {(() => {
+                                                    const start = new Date(testStartDate);
+                                                    const end = new Date(testEndDate);
+                                                    const diffMinutes = Math.round((end - start) / (60 * 1000));
+                                                    const requiredMinutes = test.duration_minutes + 5;
+
+                                                    if (diffMinutes < requiredMinutes) {
+                                                        return (
+                                                            <p className="text-red-600 text-xs">
+                                                                ⚠️ Test window too short. Need at least {requiredMinutes} minutes for a {test.duration_minutes}-minute test.
+                                                            </p>
+                                                        );
+                                                    } else {
+                                                        return (
+                                                            <p className="text-green-600 text-xs">
+                                                                ✅ Test window: {diffMinutes} minutes (requires {requiredMinutes} minutes)
+                                                            </p>
+                                                        );
+                                                    }
+                                                })()}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
 
-                                {/* Test End Date */}
-                                <div>
-                                    <label className="block text-sm font-semibold text-gray-900 mb-1 sm:mb-2">
-                                        Test End Date & Time *
-                                    </label>
-                                    <input
-                                        type="datetime-local"
-                                        value={testEndDate}
-                                        onChange={(e) => setTestEndDate(e.target.value)}
-                                        min={testStartDate ? new Date(new Date(testStartDate).getTime() + (test.duration_minutes + 5) * 60 * 1000).toISOString().slice(0, 16) : new Date().toISOString().slice(0, 16)}
-                                        className="w-full px-3 py-2 text-sm sm:text-base border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
-                                    />
-                                    <p className="text-xs text-gray-500 mt-1">
-                                        Last date/time to complete the test
-                                    </p>
+                                {/* Proctoring Settings */}
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                                            <Eye className="w-4 h-4 text-purple-600" />
+                                            Enable Proctoring
+                                        </label>
+                                        <button
+                                            type="button"
+                                            onClick={() => setProctoringSettings(prev => ({
+                                                ...prev,
+                                                isProctored: !prev.isProctored
+                                            }))}
+                                            className={`relative inline-flex h-5 w-10 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${proctoringSettings.isProctored ? 'bg-blue-600' : 'bg-gray-200'
+                                                }`}
+                                        >
+                                            <span
+                                                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${proctoringSettings.isProctored ? 'translate-x-5' : 'translate-x-0'
+                                                    }`}
+                                            />
+                                        </button>
+                                    </div>
 
-                                    {testStartDate && testEndDate && test && (
-                                        <div className="mt-2">
-                                            {(() => {
-                                                const start = new Date(testStartDate);
-                                                const end = new Date(testEndDate);
-                                                const diffMinutes = Math.round((end - start) / (60 * 1000));
-                                                const requiredMinutes = test.duration_minutes + 5;
-
-                                                if (diffMinutes < requiredMinutes) {
-                                                    return (
-                                                        <p className="text-red-600 text-xs">
-                                                            ⚠️ Test window too short. Need at least {requiredMinutes} minutes for a {test.duration_minutes}-minute test.
-                                                        </p>
-                                                    );
-                                                } else {
-                                                    return (
-                                                        <p className="text-green-600 text-xs">
-                                                            ✅ Test window: {diffMinutes} minutes (requires {requiredMinutes} minutes)
-                                                        </p>
-                                                    );
-                                                }
-                                            })()}
+                                    {proctoringSettings.isProctored && (
+                                        <div className="space-y-3 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                            <h4 className="text-sm font-semibold text-gray-900 mb-2">Proctoring Settings</h4>
+                                            {[
+                                                { key: 'fullscreen_required', label: 'Fullscreen Required' },
+                                                { key: 'tab_switching_detection', label: 'Tab Switching Detection' },
+                                                { key: 'copy_paste_prevention', label: 'Copy/Paste Prevention' }
+                                            ].map((setting) => (
+                                                <div key={setting.key} className="flex items-center justify-between">
+                                                    <span className="text-sm text-gray-700">{setting.label}</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setProctoringSettings(prev => ({
+                                                            ...prev,
+                                                            proctoringSettings: {
+                                                                ...prev.proctoringSettings,
+                                                                [setting.key]: !prev.proctoringSettings[setting.key]
+                                                            }
+                                                        }))}
+                                                        className={`relative inline-flex h-4 w-8 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${proctoringSettings.proctoringSettings[setting.key] ? 'bg-green-500' : 'bg-gray-300'
+                                                            }`}
+                                                    >
+                                                        <span
+                                                            className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${proctoringSettings.proctoringSettings[setting.key] ? 'translate-x-4' : 'translate-x-0'
+                                                                }`}
+                                                        />
+                                                    </button>
+                                                </div>
+                                            ))}
                                         </div>
                                     )}
                                 </div>
                             </div>
-
-                            {/* Proctoring Settings */}
-                            <div className="space-y-4">
-                                <div className="flex items-center justify-between">
-                                    <label className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                                        <Eye className="w-4 h-4 text-purple-600" />
-                                        Enable Proctoring
-                                    </label>
-                                    <button
-                                        type="button"
-                                        onClick={() => setProctoringSettings(prev => ({
-                                            ...prev,
-                                            isProctored: !prev.isProctored
-                                        }))}
-                                        className={`relative inline-flex h-5 w-10 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${proctoringSettings.isProctored ? 'bg-blue-600' : 'bg-gray-200'
-                                            }`}
-                                    >
-                                        <span
-                                            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${proctoringSettings.isProctored ? 'translate-x-5' : 'translate-x-0'
-                                                }`}
-                                        />
-                                    </button>
-                                </div>
-
-                                {proctoringSettings.isProctored && (
-                                    <div className="space-y-3 bg-gray-50 p-4 rounded-lg border border-gray-200">
-                                        <h4 className="text-sm font-semibold text-gray-900 mb-2">Proctoring Settings</h4>
-                                        {[
-                                            { key: 'fullscreen_required', label: 'Fullscreen Required' },
-                                            { key: 'tab_switching_detection', label: 'Tab Switching Detection' },
-                                            { key: 'copy_paste_prevention', label: 'Copy/Paste Prevention' }
-                                        ].map((setting) => (
-                                            <div key={setting.key} className="flex items-center justify-between">
-                                                <span className="text-sm text-gray-700">{setting.label}</span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setProctoringSettings(prev => ({
-                                                        ...prev,
-                                                        proctoringSettings: {
-                                                            ...prev.proctoringSettings,
-                                                            [setting.key]: !prev.proctoringSettings[setting.key]
-                                                        }
-                                                    }))}
-                                                    className={`relative inline-flex h-4 w-8 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${proctoringSettings.proctoringSettings[setting.key] ? 'bg-green-500' : 'bg-gray-300'
-                                                        }`}
-                                                >
-                                                    <span
-                                                        className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${proctoringSettings.proctoringSettings[setting.key] ? 'translate-x-4' : 'translate-x-0'
-                                                            }`}
-                                                    />
-                                                </button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
                         </div>
-                    </div>
+                    )}
 
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 sm:gap-6 lg:gap-8">
                         {/* Mobile Filters Toggle */}
@@ -704,15 +699,18 @@ export default function AssignTestPage() {
                                                 Select applicants to assign the test
                                             </p>
                                         </div>
-                                        <div className="flex items-center gap-2 sm:gap-3">
-                                            <button
-                                                onClick={toggleSelectAll}
-                                                className="flex items-center cursor-pointer gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-blue-600 hover:text-blue-700 font-medium text-xs sm:text-sm bg-blue-50 rounded-lg transition-colors"
-                                            >
-                                                <CheckSquare className="w-3 h-3 sm:w-4 sm:h-4" />
-                                                {selectedApplicants.size === filteredApplicants.length ? 'Deselect All' : 'Select All'}
-                                            </button>
-                                        </div>
+                                        {applicants.length > 0 && (
+                                            <div className="flex items-center gap-2 sm:gap-3">
+                                                <button
+                                                    onClick={toggleSelectAll}
+                                                    className="flex items-center cursor-pointer gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-blue-600 hover:text-blue-700 font-medium text-xs sm:text-sm bg-blue-50 rounded-lg transition-colors"
+                                                >
+                                                    <CheckSquare className="w-3 h-3 sm:w-4 sm:h-4" />
+                                                    {selectedApplicants.size === filteredApplicants.length ? 'Deselect All' : 'Select All'}
+                                                </button>
+                                            </div>
+                                        )}
+
                                     </div>
                                 </div>
 

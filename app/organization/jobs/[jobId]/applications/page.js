@@ -1,20 +1,23 @@
+// app/organization/jobs/[jobId]/applications/page.js
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { jwtDecode } from 'jwt-decode';
 import {
-    Search, Calendar, MapPin,
-    Building, User, Star, Eye,
-    X, Loader2, ArrowLeft, FileText,
-    CheckCircle, XCircle, Clock, Video, Zap
+    ArrowLeft, Search, Calendar, MapPin,
+    Building, User, Star, Eye, Filter,
+    X, Send, CheckCircle, XCircle, Clock,
+    Video, Zap, Mail, Phone, Download,
+    ChevronDown, MoreVertical
 } from 'lucide-react';
-import { getJobApplications } from '@/actions/applications/getJobApplications';
 import { updateApplicationStatus } from '@/actions/applications/updateApplicationStatus';
+import { getJobDetails } from '@/actions/jobs/getJobDetails';
+import { getJobApplications } from '@/actions/applications/getJobAplications';
 import Link from 'next/link';
+import toast, { Toaster } from 'react-hot-toast';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
-import toast, { Toaster } from 'react-hot-toast';
 
 export default function JobApplicationsPage() {
     const router = useRouter();
@@ -23,16 +26,23 @@ export default function JobApplicationsPage() {
 
     const [applications, setApplications] = useState([]);
     const [filteredApplications, setFilteredApplications] = useState([]);
+    const [job, setJob] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [user, setUser] = useState(null);
-    const [job, setJob] = useState(null);
     const [isUpdating, setIsUpdating] = useState(false);
+
+    // Filter States
     const [filters, setFilters] = useState({
         status: 'all',
         search: '',
         sortBy: 'applied_at',
         sortOrder: 'desc'
     });
+
+    // Modal States
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [pendingAction, setPendingAction] = useState(null);
+    const [notes, setNotes] = useState('');
 
     // Status options
     const statusOptions = [
@@ -55,7 +65,7 @@ export default function JobApplicationsPage() {
         { value: 'updated_at-desc', label: 'Recently Updated' },
     ];
 
-    // JWT decoding and authentication
+    // Authentication
     useEffect(() => {
         const token = localStorage.getItem('token');
         if (!token) {
@@ -85,39 +95,47 @@ export default function JobApplicationsPage() {
         }
     }, [router]);
 
-    // Fetch applications for this job
-    const fetchJobApplications = useCallback(async () => {
-        if (!user) return;
+    // Fetch job details and applications
+    const fetchData = useCallback(async () => {
+        if (!user?.orgId || !jobId) return;
 
         setIsLoading(true);
         try {
+            // Fetch job details
+            const jobResult = await getJobDetails(jobId);
+            if (jobResult.success) {
+                setJob(jobResult.job);
+            } else {
+                toast.error(jobResult.message || 'Failed to load job details');
+                router.push('/organization/jobs');
+                return;
+            }
+
+            // Fetch applications
             const authData = {
                 orgId: user.orgId,
                 userId: user.id
             };
 
-            const result = await getJobApplications(jobId, authData);
-
-            if (result.success) {
-                setApplications(result.applications || []);
-                setJob(result.job || null);
+            const appsResult = await getJobApplications(jobId, authData);
+            if (appsResult.success) {
+                setApplications(appsResult.applications || []);
             } else {
-                console.error('Failed to fetch applications:', result.message);
-                toast.error('Failed to load applications');
+                toast.error(appsResult.message || 'Failed to load applications');
             }
         } catch (error) {
-            console.error('Error fetching applications:', error);
-            toast.error('Error loading applications');
+            console.error('Error fetching data:', error);
+            toast.error('Failed to load data');
         } finally {
             setIsLoading(false);
         }
-    }, [user, jobId]);
+    }, [user, jobId, router]);
 
     useEffect(() => {
         if (user) {
-            fetchJobApplications();
+            fetchData();
         }
-    }, [user, fetchJobApplications]);
+    }, [user, fetchData]);
 
     // Apply filters and sorting
     useEffect(() => {
@@ -138,7 +156,8 @@ export default function JobApplicationsPage() {
             const searchTerm = filters.search.toLowerCase();
             filtered = filtered.filter(app =>
                 app.applicant_name?.toLowerCase().includes(searchTerm) ||
-                app.applicant_email?.toLowerCase().includes(searchTerm)
+                app.applicant_email?.toLowerCase().includes(searchTerm) ||
+                app.department?.toLowerCase().includes(searchTerm)
             );
         }
 
@@ -170,8 +189,33 @@ export default function JobApplicationsPage() {
         setFilteredApplications(filtered);
     }, [applications, filters]);
 
-    // Status update function
-    const handleStatusUpdate = async (applicationId, newStatus) => {
+    // Status update handlers
+    const openConfirmationModal = (application, action) => {
+        setPendingAction({ application, ...action });
+
+        // Set default notes based on action
+        const defaultNotes = {
+            shortlisted: `Candidate ${application.applicant_name} has been shortlisted for ${application.job_title} position. Strong match based on skills and experience.`,
+            test_scheduled: `Technical assessment test assigned to ${application.applicant_name} for ${application.job_title} position.`,
+            interview_scheduled: `Interview scheduled with ${application.applicant_name} for ${application.job_title} position.`,
+            waiting_for_result: `Interview completed with ${application.applicant_name}. Waiting for final decision.`,
+            hired: `Congratulations! ${application.applicant_name} has been hired for ${application.job_title} position.`,
+            rejected: `Application from ${application.applicant_name} has been rejected for ${application.job_title} position.`
+        };
+
+        setNotes(defaultNotes[action.newStatus] || '');
+        setIsModalOpen(true);
+    };
+
+    const closeModal = () => {
+        setIsModalOpen(false);
+        setPendingAction(null);
+        setNotes('');
+    };
+
+    const confirmAction = async () => {
+        if (!pendingAction) return;
+
         setIsUpdating(true);
         try {
             const authData = {
@@ -179,14 +223,23 @@ export default function JobApplicationsPage() {
                 userId: user.id
             };
 
-            const result = await updateApplicationStatus(authData, applicationId, newStatus);
+            const result = await updateApplicationStatus(
+                authData,
+                pendingAction.application.id,
+                pendingAction.newStatus,
+                notes
+            );
 
             if (result.success) {
                 // Update local state
                 setApplications(prev => prev.map(app =>
-                    app.id === applicationId ? { ...app, status: newStatus } : app
+                    app.id === pendingAction.application.id
+                        ? { ...app, status: pendingAction.newStatus }
+                        : app
                 ));
-                toast.success(`Status updated to ${newStatus.replace('_', ' ')}`);
+
+                toast.success(`Application ${pendingAction.newStatus.replace('_', ' ')}`);
+                closeModal();
             } else {
                 toast.error(result.message || 'Failed to update status');
             }
@@ -198,6 +251,141 @@ export default function JobApplicationsPage() {
         }
     };
 
+    // Get available actions for an application
+    const getAvailableActions = (application) => {
+        const currentStatus = application.status;
+
+        switch (currentStatus) {
+            case 'submitted':
+                return [
+                    {
+                        id: 'shortlist',
+                        label: 'Shortlist',
+                        description: 'Move to shortlisted pool',
+                        icon: Star,
+                        color: 'text-indigo-600 hover:bg-indigo-50',
+                        newStatus: 'shortlisted'
+                    },
+                    {
+                        id: 'assign_test',
+                        label: 'Assign Test',
+                        description: 'Send assessment test',
+                        icon: Zap,
+                        color: 'text-blue-600 hover:bg-blue-50',
+                        newStatus: 'test_scheduled'
+                    },
+                    {
+                        id: 'schedule_interview',
+                        label: 'Schedule Interview',
+                        description: 'Arrange interview',
+                        icon: Video,
+                        color: 'text-purple-600 hover:bg-purple-50',
+                        newStatus: 'interview_scheduled'
+                    },
+                    {
+                        id: 'reject',
+                        label: 'Reject',
+                        description: 'Reject application',
+                        icon: XCircle,
+                        color: 'text-red-600 hover:bg-red-50',
+                        newStatus: 'rejected'
+                    }
+                ];
+
+            case 'shortlisted':
+                return [
+                    {
+                        id: 'assign_test',
+                        label: 'Assign Test',
+                        description: 'Send assessment test',
+                        icon: Zap,
+                        color: 'text-blue-600 hover:bg-blue-50',
+                        newStatus: 'test_scheduled'
+                    },
+                    {
+                        id: 'schedule_interview',
+                        label: 'Schedule Interview',
+                        description: 'Arrange interview',
+                        icon: Video,
+                        color: 'text-purple-600 hover:bg-purple-50',
+                        newStatus: 'interview_scheduled'
+                    },
+                    {
+                        id: 'reject',
+                        label: 'Reject',
+                        description: 'Reject application',
+                        icon: XCircle,
+                        color: 'text-red-600 hover:bg-red-50',
+                        newStatus: 'rejected'
+                    }
+                ];
+
+            case 'test_scheduled':
+                return [
+                    {
+                        id: 'schedule_interview',
+                        label: 'Schedule Interview',
+                        description: 'Arrange interview',
+                        icon: Video,
+                        color: 'text-purple-600 hover:bg-purple-50',
+                        newStatus: 'interview_scheduled'
+                    },
+                    {
+                        id: 'reject',
+                        label: 'Reject',
+                        description: 'Reject application',
+                        icon: XCircle,
+                        color: 'text-red-600 hover:bg-red-50',
+                        newStatus: 'rejected'
+                    }
+                ];
+
+            case 'interview_scheduled':
+                return [
+                    {
+                        id: 'waiting_result',
+                        label: 'Waiting Result',
+                        description: 'Interview completed',
+                        icon: Clock,
+                        color: 'text-orange-600 hover:bg-orange-50',
+                        newStatus: 'waiting_for_result'
+                    },
+                    {
+                        id: 'reject',
+                        label: 'Reject',
+                        description: 'Reject after interview',
+                        icon: XCircle,
+                        color: 'text-red-600 hover:bg-red-50',
+                        newStatus: 'rejected'
+                    }
+                ];
+
+            case 'waiting_for_result':
+                return [
+                    {
+                        id: 'hire',
+                        label: 'Hire',
+                        description: 'Final decision - Hire',
+                        icon: CheckCircle,
+                        color: 'text-green-600 hover:bg-green-50',
+                        newStatus: 'hired'
+                    },
+                    {
+                        id: 'reject',
+                        label: 'Reject',
+                        description: 'Final decision - Reject',
+                        icon: XCircle,
+                        color: 'text-red-600 hover:bg-red-50',
+                        newStatus: 'rejected'
+                    }
+                ];
+
+            default:
+                return [];
+        }
+    };
+
+    // Helper functions
     const getStatusColor = (status) => {
         const colors = {
             submitted: 'bg-yellow-100 text-yellow-800 border-yellow-200',
@@ -229,7 +417,6 @@ export default function JobApplicationsPage() {
         });
     };
 
-    // Handler functions
     const handleFilterChange = (key, value) => {
         setFilters(prev => ({ ...prev, [key]: value }));
     };
@@ -250,28 +437,34 @@ export default function JobApplicationsPage() {
 
     const hasActiveFilters = filters.status !== 'all' || filters.search;
 
-    // Get available status actions for an application
-    const getAvailableStatusActions = (currentStatus) => {
-        const baseActions = [
-            { value: 'shortlisted', label: 'Shortlist', icon: Star, color: 'text-indigo-600 hover:bg-indigo-50' },
-            { value: 'test_scheduled', label: 'Test', icon: Zap, color: 'text-blue-600 hover:bg-blue-50' },
-            { value: 'interview_scheduled', label: 'Interview', icon: Video, color: 'text-purple-600 hover:bg-purple-50' },
-            { value: 'waiting_for_result', label: 'Waiting', icon: Clock, color: 'text-orange-600 hover:bg-orange-50' },
-            { value: 'hired', label: 'Hire', icon: CheckCircle, color: 'text-green-600 hover:bg-green-50' },
-            { value: 'rejected', label: 'Reject', icon: XCircle, color: 'text-red-600 hover:bg-red-50' }
-        ];
-
-        // Filter out current status
-        return baseActions.filter(action => action.value !== currentStatus);
-    };
-
     // Loading state
     if (!user || isLoading) {
         return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center">
                 <div className="text-center p-8 bg-white rounded-xl shadow-lg">
-                    <Loader2 className="w-10 h-10 animate-spin text-indigo-600 mx-auto mb-4" />
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
                     <p className="text-lg font-medium text-gray-700">Loading applications...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (!job) {
+        return (
+            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                <div className="text-center bg-white rounded-2xl shadow-xl border border-gray-200 p-8 max-w-md">
+                    <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <X className="w-8 h-8 text-red-500" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-gray-900 mb-2">Job Not Found</h2>
+                    <p className="text-gray-600 mb-6">The job you're looking for doesn't exist or you don't have access to it.</p>
+                    <Link
+                        href="/organization/jobs"
+                        className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
+                    >
+                        <ArrowLeft className="w-5 h-5" />
+                        Back to Jobs
+                    </Link>
                 </div>
             </div>
         );
@@ -283,38 +476,51 @@ export default function JobApplicationsPage() {
             <Toaster position="top-right" />
             <div className="min-h-screen bg-gray-50">
                 {/* Header */}
-                <header className="bg-white border-gray-200 shadow-sm">
+                <header className="bg-white border-b border-gray-200 shadow-sm">
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-                            <div className="flex items-center gap-4 mb-4 sm:mb-0">
-                                <Link
-                                    href={`/organization/jobs/${jobId}`}
-                                    className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
-                                >
-                                    <ArrowLeft className="w-5 h-5" />
-                                    Back to Job
-                                </Link>
-                                <div>
-                                    <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
-                                        {job?.title || 'Job'} Applications
-                                    </h1>
-                                    <p className="text-gray-600 mt-1">
-                                        Manage applications for this position
-                                    </p>
+                        <div className="flex items-center gap-4 mb-4">
+                            <Link
+                                href="/organization/jobs"
+                                className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
+                            >
+                                <ArrowLeft className="w-5 h-5" />
+                                Back to Jobs
+                            </Link>
+                        </div>
+
+                        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                            <div className="flex-1">
+                                <div className="flex items-center gap-3 mb-3">
+                                    <div className="p-2 bg-indigo-100 rounded-lg">
+                                        <Building className="w-6 h-6 text-indigo-600" />
+                                    </div>
+                                    <h1 className="text-3xl lg:text-4xl font-bold text-gray-900">{job.title}</h1>
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-4 text-gray-600">
+                                    <div className="flex items-center gap-2">
+                                        <MapPin className="w-4 h-4" />
+                                        <span className="font-medium">{job.location}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <User className="w-4 h-4" />
+                                        <span className="capitalize">{job.experience_level}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <Calendar className="w-4 h-4" />
+                                        <span>{formatDate(job.created_at)}</span>
+                                    </div>
                                 </div>
                             </div>
+
                             <div className="flex items-center gap-4">
-                                <div className="bg-indigo-50 rounded-lg border border-indigo-200 px-4 py-2">
-                                    <span className="text-sm text-indigo-500">Total:</span>
-                                    <span className="ml-2 text-xl font-bold text-indigo-700">
-                                        {applications.length}
-                                    </span>
+                                <div className="text-center bg-indigo-50 rounded-xl px-4 py-3 border border-indigo-200">
+                                    <div className="text-2xl font-bold text-indigo-700">{applications.length}</div>
+                                    <div className="text-sm text-indigo-600">Total Applications</div>
                                 </div>
-                                <div className="bg-green-50 rounded-lg border border-green-200 px-4 py-2">
-                                    <span className="text-sm text-green-500">Showing:</span>
-                                    <span className="ml-2 text-xl font-bold text-green-700">
-                                        {filteredApplications.length}
-                                    </span>
+                                <div className="text-center bg-green-50 rounded-xl px-4 py-3 border border-green-200">
+                                    <div className="text-2xl font-bold text-green-700">{filteredApplications.length}</div>
+                                    <div className="text-sm text-green-600">Showing</div>
                                 </div>
                             </div>
                         </div>
@@ -325,9 +531,9 @@ export default function JobApplicationsPage() {
                 <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                     {/* Filters Section */}
                     <div className="bg-white rounded-xl border border-gray-200 p-6 mb-8 shadow-sm">
-                        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
                             {/* Search Bar */}
-                            <div className="flex-1 w-full lg:max-w-md">
+                            <div className="flex-1 w-full lg:max-w-lg">
                                 <div className="relative">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
                                     <input
@@ -341,40 +547,46 @@ export default function JobApplicationsPage() {
                             </div>
 
                             {/* Dropdown Controls */}
-                            <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+                            <div className="flex flex-wrap items-center gap-4 w-full lg:w-auto">
                                 {/* Status Filter */}
-                                <div className="relative group flex-1 min-w-[150px] lg:flex-none">
-                                    <select
-                                        value={filters.status}
-                                        onChange={(e) => handleFilterChange('status', e.target.value)}
-                                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 appearance-none bg-white"
-                                    >
-                                        {statusOptions.map(option => (
-                                            <option key={option.value} value={option.value}>
+                                <div className="relative group flex-1 min-w-[150px] sm:flex-none sm:w-44">
+                                    <button className="px-4 py-3 w-full border border-gray-300 rounded-lg flex justify-between items-center text-gray-700 hover:border-indigo-500 focus:ring-2 focus:ring-indigo-500">
+                                        {statusOptions.find((s) => s.value === filters.status)?.label || 'All Status'}
+                                        <ChevronDown className="w-4 h-4 text-gray-400 group-hover:text-indigo-500" />
+                                    </button>
+                                    <div className="absolute hidden group-hover:block bg-white border border-gray-200 shadow-lg rounded-lg w-full sm:w-44 z-10">
+                                        {statusOptions.map((option) => (
+                                            <button
+                                                key={option.value}
+                                                onClick={() => handleFilterChange('status', option.value)}
+                                                className={`block w-full text-left px-4 py-2 text-sm hover:bg-indigo-50 ${filters.status === option.value ? 'bg-indigo-100 text-indigo-700' : 'text-gray-700'
+                                                    }`}
+                                            >
                                                 {option.label}
-                                            </option>
+                                            </button>
                                         ))}
-                                    </select>
-                                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
-                                        ▼
                                     </div>
                                 </div>
 
                                 {/* Sort Filter */}
-                                <div className="relative group flex-1 min-w-[150px] lg:flex-none">
-                                    <select
-                                        value={`${filters.sortBy}-${filters.sortOrder}`}
-                                        onChange={(e) => handleSortChange(e.target.value)}
-                                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 appearance-none bg-white"
-                                    >
-                                        {sortOptions.map(option => (
-                                            <option key={option.value} value={option.value}>
+                                <div className="relative group flex-1 min-w-[150px] sm:flex-none sm:w-44">
+                                    <button className="px-4 py-3 w-full border border-gray-300 rounded-lg flex justify-between items-center text-gray-700 hover:border-indigo-500 focus:ring-2 focus:ring-indigo-500">
+                                        {sortOptions.find((s) => s.value === `${filters.sortBy}-${filters.sortOrder}`)?.label || 'Sort By'}
+                                        <ChevronDown className="w-4 h-4 text-gray-400 group-hover:text-indigo-500" />
+                                    </button>
+                                    <div className="absolute hidden group-hover:block bg-white border border-gray-200 shadow-lg rounded-lg w-full sm:w-48 z-10">
+                                        {sortOptions.map((option) => (
+                                            <button
+                                                key={option.value}
+                                                onClick={() => handleSortChange(option.value)}
+                                                className={`block w-full text-left px-4 py-2 text-sm hover:bg-indigo-50 ${`${filters.sortBy}-${filters.sortOrder}` === option.value
+                                                        ? 'bg-indigo-100 text-indigo-700'
+                                                        : 'text-gray-700'
+                                                    }`}
+                                            >
                                                 {option.label}
-                                            </option>
+                                            </button>
                                         ))}
-                                    </select>
-                                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
-                                        ▼
                                     </div>
                                 </div>
 
@@ -382,7 +594,7 @@ export default function JobApplicationsPage() {
                                 {hasActiveFilters && (
                                     <button
                                         onClick={clearFilters}
-                                        className="px-4 py-3 w-full lg:w-auto text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg border border-red-200 transition-colors font-medium"
+                                        className="px-4 py-3 w-full sm:w-auto text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg border border-red-200 transition-colors font-medium"
                                     >
                                         Clear Filters
                                     </button>
@@ -445,6 +657,9 @@ export default function JobApplicationsPage() {
                                                     Applicant
                                                 </th>
                                                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                                                    Contact
+                                                </th>
+                                                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                                                     Applied
                                                 </th>
                                                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
@@ -453,19 +668,16 @@ export default function JobApplicationsPage() {
                                                 <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                                                     Status
                                                 </th>
-                                                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                                                    Quick Actions
-                                                </th>
                                                 <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                                                    View
+                                                    Actions
                                                 </th>
                                             </tr>
                                         </thead>
                                         <tbody className="bg-white divide-y divide-gray-200">
                                             {filteredApplications.map((application) => {
-                                                const availableActions = getAvailableStatusActions(application.status);
+                                                const availableActions = getAvailableActions(application);
                                                 return (
-                                                    <tr key={application.id} className="hover:bg-gray-50 transition duration-150">
+                                                    <tr key={application.id} className="hover:bg-gray-50 transition-colors">
                                                         <td className="px-6 py-4 whitespace-nowrap">
                                                             <div className="flex items-center gap-3">
                                                                 <div className="flex-shrink-0">
@@ -473,7 +685,7 @@ export default function JobApplicationsPage() {
                                                                         <User className="w-5 h-5 text-indigo-600" />
                                                                     </div>
                                                                 </div>
-                                                                <div className="min-w-0">
+                                                                <div>
                                                                     <div className="flex items-center gap-2">
                                                                         <p className="text-base font-semibold text-gray-900">
                                                                             {application.applicant_name}
@@ -482,11 +694,15 @@ export default function JobApplicationsPage() {
                                                                             <Star className="w-4 h-4 text-amber-500 fill-current" />
                                                                         )}
                                                                     </div>
-                                                                    <p className="text-sm text-gray-600 truncate">
-                                                                        {application.applicant_email}
-                                                                    </p>
+                                                                    <p className="text-sm text-gray-500">{application.department}</p>
                                                                 </div>
                                                             </div>
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                            <div className="text-sm text-gray-900">{application.applicant_email}</div>
+                                                            {application.applicant_phone && (
+                                                                <div className="text-sm text-gray-500">{application.applicant_phone}</div>
+                                                            )}
                                                         </td>
                                                         <td className="px-6 py-4 whitespace-nowrap">
                                                             <div className="text-sm text-gray-900 font-medium">
@@ -510,38 +726,31 @@ export default function JobApplicationsPage() {
                                                             </span>
                                                         </td>
                                                         <td className="px-6 py-4 whitespace-nowrap">
-                                                            <div className="flex flex-wrap gap-1">
-                                                                {availableActions.slice(0, 3).map((action) => {
-                                                                    const IconComponent = action.icon;
-                                                                    return (
-                                                                        <button
-                                                                            key={action.value}
-                                                                            onClick={() => handleStatusUpdate(application.id, action.value)}
-                                                                            disabled={isUpdating}
-                                                                            className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border transition-colors ${action.color} disabled:opacity-50 disabled:cursor-not-allowed`}
-                                                                            title={action.label}
-                                                                        >
-                                                                            <IconComponent className="w-3 h-3" />
-                                                                        </button>
-                                                                    );
-                                                                })}
-                                                                {availableActions.length > 3 && (
+                                                            <div className="flex items-center justify-center gap-2">
+                                                                <Link
+                                                                    href={`/organization/applications/${application.id}`}
+                                                                    className="inline-flex items-center gap-1 px-3 py-2 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors font-medium text-sm"
+                                                                >
+                                                                    <Eye className="w-4 h-4" />
+                                                                    View
+                                                                </Link>
+
+                                                                {availableActions.length > 0 && (
                                                                     <div className="relative group">
-                                                                        <button className="inline-flex items-center px-2 py-1 rounded text-xs font-medium border border-gray-300 text-gray-600 hover:bg-gray-50">
-                                                                            +{availableActions.length - 3}
+                                                                        <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors">
+                                                                            <MoreVertical className="w-4 h-4" />
                                                                         </button>
-                                                                        <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block bg-white border border-gray-200 rounded-lg shadow-lg z-10 p-1 min-w-[120px]">
-                                                                            {availableActions.slice(3).map((action) => {
+                                                                        <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">
+                                                                            {availableActions.map((action) => {
                                                                                 const IconComponent = action.icon;
                                                                                 return (
                                                                                     <button
-                                                                                        key={action.value}
-                                                                                        onClick={() => handleStatusUpdate(application.id, action.value)}
-                                                                                        disabled={isUpdating}
-                                                                                        className={`w-full text-left flex items-center gap-2 px-3 py-2 rounded text-sm ${action.color} disabled:opacity-50 disabled:cursor-not-allowed`}
+                                                                                        key={action.id}
+                                                                                        onClick={() => openConfirmationModal(application, action)}
+                                                                                        className={`w-full flex items-center gap-3 px-4 py-2 text-sm ${action.color} hover:bg-opacity-10 transition-colors`}
                                                                                     >
-                                                                                        <IconComponent className="w-3 h-3" />
-                                                                                        {action.label}
+                                                                                        <IconComponent className="w-4 h-4" />
+                                                                                        <span>{action.label}</span>
                                                                                     </button>
                                                                                 );
                                                                             })}
@@ -549,14 +758,6 @@ export default function JobApplicationsPage() {
                                                                     </div>
                                                                 )}
                                                             </div>
-                                                        </td>
-                                                        <td className="px-6 py-4 whitespace-nowrap text-center">
-                                                            <Link
-                                                                href={`/organization/applications/${application.id}`}
-                                                                className="inline-flex items-center gap-1 px-3 py-2 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors font-medium text-sm border border-transparent hover:border-indigo-200"
-                                                            >
-                                                                View <Eye className="w-4 h-4" />
-                                                            </Link>
                                                         </td>
                                                     </tr>
                                                 );
@@ -568,23 +769,23 @@ export default function JobApplicationsPage() {
                                 {/* Mobile View */}
                                 <div className="lg:hidden space-y-4 p-4">
                                     {filteredApplications.map((application) => {
-                                        const availableActions = getAvailableStatusActions(application.status);
+                                        const availableActions = getAvailableActions(application);
                                         return (
-                                            <div key={application.id} className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
-                                                {/* Top Section */}
-                                                <div className="flex items-start justify-between mb-3">
+                                            <div key={application.id} className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                                                {/* Header */}
+                                                <div className="flex items-start justify-between mb-4">
                                                     <div className="flex items-center gap-3">
                                                         <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center">
                                                             <User className="w-5 h-5 text-indigo-600" />
                                                         </div>
                                                         <div>
                                                             <div className="flex items-center gap-2">
-                                                                <p className="font-semibold text-gray-900">{application.applicant_name}</p>
+                                                                <h3 className="font-semibold text-gray-900">{application.applicant_name}</h3>
                                                                 {application.resume_score >= 80 && (
                                                                     <Star className="w-4 h-4 text-amber-500 fill-current" />
                                                                 )}
                                                             </div>
-                                                            <p className="text-sm text-gray-600">{application.applicant_email}</p>
+                                                            <p className="text-sm text-gray-500">{application.applicant_email}</p>
                                                         </div>
                                                     </div>
                                                     <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(application.status)} capitalize`}>
@@ -592,13 +793,13 @@ export default function JobApplicationsPage() {
                                                     </span>
                                                 </div>
 
-                                                {/* Middle Section */}
-                                                <div className="grid grid-cols-2 gap-4 text-sm text-gray-600 mb-3">
+                                                {/* Details */}
+                                                <div className="grid grid-cols-2 gap-4 text-sm text-gray-600 mb-4">
                                                     <div className="flex items-center gap-2">
                                                         <Calendar className="w-4 h-4 text-gray-400" />
                                                         <span>{formatDate(application.applied_at)}</span>
                                                     </div>
-                                                    <div className="flex items-center justify-end gap-2">
+                                                    <div className="flex items-center gap-2">
                                                         {application.resume_score > 0 ? (
                                                             <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getScoreColor(application.resume_score)}`}>
                                                                 Score: {application.resume_score}%
@@ -611,53 +812,55 @@ export default function JobApplicationsPage() {
                                                     </div>
                                                 </div>
 
-                                                {/* Actions Section */}
-                                                <div className="flex items-center justify-between pt-3 border-t border-gray-200">
-                                                    <div className="flex gap-1">
-                                                        {availableActions.slice(0, 2).map((action) => {
-                                                            const IconComponent = action.icon;
-                                                            return (
-                                                                <button
-                                                                    key={action.value}
-                                                                    onClick={() => handleStatusUpdate(application.id, action.value)}
-                                                                    disabled={isUpdating}
-                                                                    className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border transition-colors ${action.color} disabled:opacity-50 disabled:cursor-not-allowed`}
-                                                                    title={action.label}
-                                                                >
-                                                                    <IconComponent className="w-3 h-3" />
-                                                                </button>
-                                                            );
-                                                        })}
-                                                        {availableActions.length > 2 && (
-                                                            <div className="relative group">
-                                                                <button className="inline-flex items-center px-2 py-1 rounded text-xs font-medium border border-gray-300 text-gray-600 hover:bg-gray-50">
-                                                                    +{availableActions.length - 2}
-                                                                </button>
-                                                                <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block bg-white border border-gray-200 rounded-lg shadow-lg z-10 p-1 min-w-[120px]">
-                                                                    {availableActions.slice(2).map((action) => {
-                                                                        const IconComponent = action.icon;
-                                                                        return (
-                                                                            <button
-                                                                                key={action.value}
-                                                                                onClick={() => handleStatusUpdate(application.id, action.value)}
-                                                                                disabled={isUpdating}
-                                                                                className={`w-full text-left flex items-center gap-2 px-3 py-2 rounded text-sm ${action.color} disabled:opacity-50 disabled:cursor-not-allowed`}
-                                                                            >
-                                                                                <IconComponent className="w-3 h-3" />
-                                                                                {action.label}
-                                                                            </button>
-                                                                        );
-                                                                    })}
-                                                                </div>
-                                                            </div>
-                                                        )}
-                                                    </div>
+                                                {/* Actions */}
+                                                <div className="flex items-center justify-between pt-4 border-t border-gray-100">
                                                     <Link
                                                         href={`/organization/applications/${application.id}`}
                                                         className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 text-sm font-medium"
                                                     >
-                                                        View <Eye className="w-4 h-4" />
+                                                        <Eye className="w-4 h-4" />
+                                                        View Details
                                                     </Link>
+
+                                                    {availableActions.length > 0 && (
+                                                        <div className="flex gap-2">
+                                                            {availableActions.slice(0, 2).map((action) => {
+                                                                const IconComponent = action.icon;
+                                                                return (
+                                                                    <button
+                                                                        key={action.id}
+                                                                        onClick={() => openConfirmationModal(application, action)}
+                                                                        className={`p-2 ${action.color} rounded-lg border transition-colors`}
+                                                                        title={action.description}
+                                                                    >
+                                                                        <IconComponent className="w-4 h-4" />
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                            {availableActions.length > 2 && (
+                                                                <div className="relative group">
+                                                                    <button className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg border transition-colors">
+                                                                        <MoreVertical className="w-4 h-4" />
+                                                                    </button>
+                                                                    <div className="absolute right-0 bottom-full mb-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">
+                                                                        {availableActions.slice(2).map((action) => {
+                                                                            const IconComponent = action.icon;
+                                                                            return (
+                                                                                <button
+                                                                                    key={action.id}
+                                                                                    onClick={() => openConfirmationModal(application, action)}
+                                                                                    className={`w-full flex items-center gap-3 px-4 py-2 text-sm ${action.color} hover:bg-opacity-10 transition-colors`}
+                                                                                >
+                                                                                    <IconComponent className="w-4 h-4" />
+                                                                                    <span>{action.label}</span>
+                                                                                </button>
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         );
@@ -668,6 +871,75 @@ export default function JobApplicationsPage() {
                     </div>
                 </main>
             </div>
+
+            {/* Confirmation Modal */}
+            {isModalOpen && pendingAction && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-2 bg-blue-100 rounded-lg">
+                                <Send className="w-6 h-6 text-blue-600" />
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-900">Confirm Status Change</h3>
+                        </div>
+
+                        <div className="mb-6">
+                            <p className="text-gray-600 mb-4">
+                                You are about to change the status for{' '}
+                                <span className="font-semibold text-gray-900">{pendingAction.application.applicant_name}</span>{' '}
+                                from{' '}
+                                <span className={`font-semibold ${getStatusColor(pendingAction.application.status)} px-2 py-1 rounded`}>
+                                    {pendingAction.application.status.replace('_', ' ')}
+                                </span>{' '}
+                                to{' '}
+                                <span className={`font-semibold ${getStatusColor(pendingAction.newStatus)} px-2 py-1 rounded`}>
+                                    {pendingAction.newStatus.replace('_', ' ')}
+                                </span>
+                            </p>
+
+                            <div className="mb-4">
+                                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                    Notes (Optional)
+                                </label>
+                                <textarea
+                                    value={notes}
+                                    onChange={(e) => setNotes(e.target.value)}
+                                    placeholder="Add notes about this status change..."
+                                    className="w-full h-32 p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                />
+                                <p className="text-xs text-gray-500 mt-1">
+                                    These notes will be saved in the status history.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3 justify-end">
+                            <button
+                                onClick={closeModal}
+                                disabled={isUpdating}
+                                className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmAction}
+                                disabled={isUpdating}
+                                className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isUpdating ? (
+                                    <div className="flex items-center gap-2">
+                                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                        Updating...
+                                    </div>
+                                ) : (
+                                    'Confirm Change'
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <Footer />
         </>
     );

@@ -536,7 +536,7 @@ export default function OrganizationJobDetailPage() {
                             <button
                                 onClick={closeStatusModal}
                                 disabled={updatingStatus}
-                                className="text-gray-400 hover:text-gray-600 text-2xl disabled:opacity-50"
+                                className="cursor-pointer text-gray-400 hover:text-white w-8 h-8 rounded hover:bg-red-500 text-2xl disabled:opacity-50"
                             >
                                 ×
                             </button>
