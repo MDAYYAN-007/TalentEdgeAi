@@ -9,7 +9,8 @@ import { getUserApplications } from '@/actions/applications/getUserApplications'
 import {
     Search, Filter, Calendar, MapPin, Building, Clock,
     CheckCircle, XCircle, Clock4, AlertCircle, Eye,
-    FileText, TrendingUp, User, Briefcase, Star, Download,Video
+    FileText, TrendingUp, User, Briefcase, Star, Download,Video,
+    Zap
 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import Link from 'next/link';

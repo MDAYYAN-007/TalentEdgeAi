@@ -5,7 +5,6 @@ import { query } from '@/actions/db';
 
 export async function assignMultipleTestsToApplicant(testIds, applicationId, testStartDate, testEndDate, assignedBy, orgId, proctoringSettings) {
     try {
-        // Verify application belongs to organization - using correct schema
         const applicationCheckSql = `
             SELECT a.id, a.applicant_id, a.status as current_status, a.job_id,
                    j.title as job_title, u.first_name, u.last_name, u.email
@@ -24,7 +23,6 @@ export async function assignMultipleTestsToApplicant(testIds, applicationId, tes
         const applicantName = `${application.first_name} ${application.last_name}`;
         const jobTitle = application.job_title;
 
-        // Verify all tests belong to organization and are active
         const testsCheckSql = `
             SELECT id, title, duration_minutes FROM tests 
             WHERE id = ANY($1) AND org_id = $2 AND is_active = true
@@ -42,7 +40,6 @@ export async function assignMultipleTestsToApplicant(testIds, applicationId, tes
 
         const tests = testsCheck.rows;
 
-        // Get recruiter name for logging
         const recruiterSql = `
             SELECT first_name, last_name FROM users WHERE id = $1 AND org_id = $2
         `;
@@ -55,13 +52,11 @@ export async function assignMultipleTestsToApplicant(testIds, applicationId, tes
         const assignments = [];
         const assignedTestTitles = [];
 
-        // Process each test
         for (const test of tests) {
             const testId = test.id;
             const testTitle = test.title;
             const testDuration = test.duration_minutes;
 
-            // Calculate minimum required time difference (test duration + 5 minutes buffer)
             const minTimeDifference = (testDuration + 5) * 60 * 1000;
             const startDate = new Date(testStartDate);
             const endDate = new Date(testEndDate);
@@ -75,7 +70,6 @@ export async function assignMultipleTestsToApplicant(testIds, applicationId, tes
                 };
             }
 
-            // Check for existing assignment
             const existingAssignmentSql = `
                 SELECT id, status FROM test_assignments 
                 WHERE test_id = $1 AND application_id = $2
@@ -83,7 +77,6 @@ export async function assignMultipleTestsToApplicant(testIds, applicationId, tes
             const existingAssignment = await query(existingAssignmentSql, [testId, applicationId]);
 
             if (existingAssignment.rows.length > 0) {
-                // Update existing assignment
                 const updateSql = `
                     UPDATE test_assignments 
                     SET test_start_date = $1,
@@ -112,7 +105,6 @@ export async function assignMultipleTestsToApplicant(testIds, applicationId, tes
                     action: 'updated'
                 });
             } else {
-                // Create new assignment
                 const insertSql = `
                     INSERT INTO test_assignments 
                     (test_id, application_id, assigned_by, test_start_date, test_end_date, status, assigned_at, is_proctored, proctoring_settings)
@@ -138,15 +130,14 @@ export async function assignMultipleTestsToApplicant(testIds, applicationId, tes
 
             assignedTestTitles.push(testTitle);
 
-            // Handle test attempts - check if exists first
             const attemptCheckSql = `
                 SELECT id FROM test_attempts 
                 WHERE test_id = $1 AND application_id = $2
             `;
+
             const attemptCheck = await query(attemptCheckSql, [testId, applicationId]);
 
             if (attemptCheck.rows.length === 0) {
-                // Create new attempt record
                 const attemptSql = `
                     INSERT INTO test_attempts 
                     (test_id, application_id, applicant_id, status, created_at)
@@ -154,7 +145,6 @@ export async function assignMultipleTestsToApplicant(testIds, applicationId, tes
                 `;
                 await query(attemptSql, [testId, applicationId, application.applicant_id]);
             } else {
-                // Update existing attempt
                 const updateAttemptSql = `
                     UPDATE test_attempts 
                     SET updated_at = NOW(),
@@ -165,7 +155,6 @@ export async function assignMultipleTestsToApplicant(testIds, applicationId, tes
             }
         }
 
-        // Update application status to 'test_scheduled' if not already
         if (application.current_status !== 'test_scheduled') {
             const updateApplicationStatusSql = `
                 UPDATE applications 
@@ -175,7 +164,6 @@ export async function assignMultipleTestsToApplicant(testIds, applicationId, tes
             `;
             await query(updateApplicationStatusSql, [applicationId]);
 
-            // Log application status change in application_status_history
             const applicationHistorySql = `
                 INSERT INTO application_status_history 
                 (application_id, old_status, new_status, performed_by, notes, performed_at)
@@ -189,7 +177,6 @@ export async function assignMultipleTestsToApplicant(testIds, applicationId, tes
                 `${assignedTestTitles.length} test(s) assigned by ${recruiterName}: ${assignedTestTitles.join(', ')}`
             ]);
         } else {
-            // Log that tests were added to existing test_scheduled application
             const applicationHistorySql = `
                 INSERT INTO application_status_history 
                 (application_id, old_status, new_status, performed_by, notes, performed_at)

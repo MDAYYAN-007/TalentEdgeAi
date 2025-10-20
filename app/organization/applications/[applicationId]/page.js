@@ -1030,6 +1030,14 @@ export default function RecruiterApplicationDetailsPage() {
             case 'interview_scheduled':
                 return [
                     {
+                        id: 'assign_another_test',
+                        label: 'Assign Another Test',
+                        description: 'Send additional assessment test to candidate',
+                        icon: Zap,
+                        color: 'bg-blue-600 hover:bg-blue-700',
+                        action: handleAssignTest
+                    },
+                    {
                         id: 'direct_hire',
                         label: 'Direct Hire',
                         description: 'Hire candidate directly without further process',

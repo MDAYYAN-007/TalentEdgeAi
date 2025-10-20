@@ -39,7 +39,7 @@ export async function getApplicantsForTestAssignment(orgId, currentTestId,userId
             INNER JOIN users u ON a.applicant_id = u.id
             LEFT JOIN profiles p ON u.id = p.user_id
             WHERE j.org_id = $1 
-            AND a.status IN ('shortlisted', 'test_scheduled')
+            AND a.status IN ('shortlisted', 'test_scheduled','interview_scheduled')
             AND j.status = 'Active'
             AND $3 = ANY(j.assigned_recruiters)
             ORDER BY a.resume_score DESC, a.applied_at DESC

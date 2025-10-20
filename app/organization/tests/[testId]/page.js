@@ -1,4 +1,3 @@
-// app/organization/tests/[testId]/page.js
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -81,6 +80,7 @@ export default function TestDetailsPage() {
         try {
             const result = await getTestDetails(testId, { orgId: user.orgId, userId: user.id });
             if (result.success) {
+                console.log('Test Details:', result.questions);
                 setTest(result.test);
                 setQuestions(result.questions);
             } else {
@@ -188,7 +188,6 @@ export default function TestDetailsPage() {
         });
     };
 
-    // Format date
     const formatDate = (dateString) => {
         if (!dateString) return 'N/A';
         const date = new Date(dateString);
@@ -201,7 +200,6 @@ export default function TestDetailsPage() {
         });
     };
 
-    // Get question type icon and color
     const getQuestionTypeInfo = (type) => {
         switch (type) {
             case 'mcq_single':
@@ -217,7 +215,6 @@ export default function TestDetailsPage() {
         }
     };
 
-    // Get difficulty color
     const getDifficultyColor = (level) => {
         switch (level) {
             case 'easy': return 'text-green-600 bg-green-50 border-green-200';
@@ -227,7 +224,6 @@ export default function TestDetailsPage() {
         }
     };
 
-    // Loading State
     if (!user || isLoading) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
@@ -658,7 +654,7 @@ export default function TestDetailsPage() {
                                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                                                         {Object.entries(question.options).map(([key, value]) => {
                                                                             const isCorrect = question.question_type === 'mcq_single'
-                                                                                ? question.correct_answer === key
+                                                                                ? question.correct_options[0] === key
                                                                                 : question.correct_options?.includes(key);
 
                                                                             return (

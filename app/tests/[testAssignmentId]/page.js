@@ -1,29 +1,32 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { jwtDecode } from 'jwt-decode';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import { getApplicantTestDetails } from '@/actions/tests/getApplicantTestDetails';
 import { getTestQuestions } from '@/actions/tests/getTestQuestions';
+import { startTestAttempt } from '@/actions/tests/startTestAttempt';
 import { submitTestResponse } from '@/actions/tests/submitTestResponse';
 import { submitTestAttempt } from '@/actions/tests/submitTestAttempt';
+import { updateProctoringViolation } from '@/actions/tests/updateProctoringViolation';
 import {
     ArrowLeft, Clock, FileText, AlertCircle, CheckCircle,
     XCircle, Play, Pause, Flag, ChevronLeft, ChevronRight,
     Save, Send, Zap, Type, Code, Eye, EyeOff, Fullscreen,
-    Minimize, User, Shield, Camera, Monitor, Smartphone
+    Minimize, User, Shield, Camera, Monitor, Smartphone,
+    AlertTriangle, Info, Lock, Unlock, Copy, Mouse
 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import Link from 'next/link';
-import { getApplicantTestDetails } from '@/actions/tests/getApplicantTestDetails';
-import { startTestAttempt } from '@/actions/tests/startTestAttempt';
 
 export default function TakeTestPage() {
     const params = useParams();
     const router = useRouter();
     const testAssignmentId = params.testAssignmentId;
 
+    // Test state
     const [testAssignment, setTestAssignment] = useState(null);
     const [testDetails, setTestDetails] = useState(null);
     const [questions, setQuestions] = useState([]);
@@ -37,12 +40,28 @@ export default function TakeTestPage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [testAttemptId, setTestAttemptId] = useState(null);
     const [user, setUser] = useState(null);
-    const [isFullscreen, setIsFullscreen] = useState(false);
     const [showInstructions, setShowInstructions] = useState(true);
+    const [showSubmitModal, setShowSubmitModal] = useState(false);
+
+    // Proctoring state
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [violationCount, setViolationCount] = useState(0);
+    const [showViolationModal, setShowViolationModal] = useState(false);
+    const [cameraAccess, setCameraAccess] = useState(false);
+    const [mediaStream, setMediaStream] = useState(null);
+    const [isStartingTest, setIsStartingTest] = useState(false);
     const [proctoringWarnings, setProctoringWarnings] = useState([]);
 
+    const proctoringInitializedRef = useRef(false);
+    const cameraCheckIntervalRef = useRef(null);
+    const violationCountRef = useRef(0);
     const timerRef = useRef(null);
-    const fullscreenRef = useRef(null);
+    const autoSaveTimeoutRef = useRef(null);
+
+    // Update ref when state changes
+    useEffect(() => {
+        violationCountRef.current = violationCount;
+    }, [violationCount]);
 
     // Authentication and initial data loading
     useEffect(() => {
@@ -63,9 +82,85 @@ export default function TakeTestPage() {
         }
     }, [testAssignmentId, router]);
 
+    // Proctoring setup
+    useEffect(() => {
+        if (isTestStarted && !proctoringInitializedRef.current) {
+            initializeProctoring();
+        }
+
+        return () => {
+            cleanupProctoring();
+        };
+    }, [isTestStarted]);
+
+    // Camera monitoring
+    useEffect(() => {
+        if (isTestStarted && testAssignment?.is_proctored) {
+            cameraCheckIntervalRef.current = setInterval(() => {
+                checkCameraStatus();
+            }, 3000);
+        }
+
+        return () => {
+            if (cameraCheckIntervalRef.current) {
+                clearInterval(cameraCheckIntervalRef.current);
+            }
+        };
+    }, [isTestStarted, testAssignment]);
+
+    // Timer management
+    // Timer management
+    useEffect(() => {
+        if (isTestStarted && timeLeft > 0) {
+            timerRef.current = setInterval(() => {
+                setTimeLeft(prev => {
+                    if (prev <= 1) {
+                        // Don't call handleAutoSubmit directly here
+                        // Instead, set timeLeft to 0 and let the effect handle it
+                        return 0;
+                    }
+                    return prev - 1;
+                });
+            }, 1000);
+        }
+
+        return () => {
+            if (timerRef.current) {
+                clearInterval(timerRef.current);
+            }
+        };
+    }, [isTestStarted, timeLeft]);
+
+    // Separate useEffect to handle auto-submit when time reaches 0
+    useEffect(() => {
+        if (isTestStarted && timeLeft === 0 && !isTestCompleted) {
+            handleAutoSubmit();
+        }
+    }, [isTestStarted, timeLeft, isTestCompleted]);
+
+    // Auto-save responses when they change
+    useEffect(() => {
+        if (isTestStarted && testAttemptId) {
+            // Clear existing timeout
+            if (autoSaveTimeoutRef.current) {
+                clearTimeout(autoSaveTimeoutRef.current);
+            }
+
+            // Set new timeout to save after 2 seconds of inactivity
+            autoSaveTimeoutRef.current = setTimeout(() => {
+                saveAllResponses();
+            }, 2000);
+        }
+
+        return () => {
+            if (autoSaveTimeoutRef.current) {
+                clearTimeout(autoSaveTimeoutRef.current);
+            }
+        };
+    }, [responses, isTestStarted, testAttemptId]);
+
     const fetchTestData = async (assignmentId, userId) => {
         try {
-            // Fetch test assignment details using the new applicant-specific function
             const assignmentResult = await getApplicantTestDetails(assignmentId, userId);
             if (!assignmentResult.success) {
                 toast.error(assignmentResult.message || 'Failed to load test details');
@@ -78,7 +173,22 @@ export default function TakeTestPage() {
 
             // Check test availability
             if (assignment.availability === 'not_started') {
-                setTimeLeft(Math.floor(assignment.time_until_start / 1000));
+                const timeUntilStart = Math.max(0, Math.floor(assignment.time_until_start / 1000));
+                setTimeLeft(timeUntilStart);
+
+                if (timeUntilStart > 0) {
+                    timerRef.current = setInterval(() => {
+                        setTimeLeft(prev => {
+                            if (prev <= 1) {
+                                clearInterval(timerRef.current);
+                                window.location.reload();
+                                return 0;
+                            }
+                            return prev - 1;
+                        });
+                    }, 1000);
+                }
+
                 setIsLoading(false);
                 return;
             }
@@ -95,7 +205,7 @@ export default function TakeTestPage() {
                 return;
             }
 
-            // Test is available, load questions using your existing function
+            // Test is available, load questions
             const questionsResult = await getTestQuestions(assignment.test_id);
             if (!questionsResult.success) {
                 toast.error('Failed to load test questions');
@@ -105,132 +215,319 @@ export default function TakeTestPage() {
             setTestDetails(questionsResult.test);
             setQuestions(questionsResult.questions || []);
 
-            // Calculate time left
-            const timeLeftSeconds = Math.floor(assignment.time_until_end / 1000);
+            // FIX: Use test duration in minutes instead of assignment end time
+            const timeLeftSeconds = questionsResult.test.duration_minutes * 60;
             setTimeLeft(timeLeftSeconds);
 
-            // Start test attempt
-            const attemptResult = await startTestAttempt(assignmentId, userId);
-            if (attemptResult.success) {
-                setTestAttemptId(attemptResult.attemptId);
-                setIsTestStarted(true);
-                setShowInstructions(true);
-            } else {
-                toast.error(attemptResult.message || 'Failed to start test attempt');
-            }
+            setIsLoading(false);
 
         } catch (error) {
             console.error('Error fetching test data:', error);
             toast.error('Error loading test');
-        } finally {
             setIsLoading(false);
         }
     };
 
-    // Timer management
-    useEffect(() => {
-        if (isTestStarted && timeLeft > 0) {
-            timerRef.current = setInterval(() => {
-                setTimeLeft(prev => {
-                    if (prev <= 1) {
-                        handleAutoSubmit();
-                        return 0;
-                    }
-                    return prev - 1;
-                });
-            }, 1000);
+    // Proctoring functions
+    const initializeProctoring = () => {
+        if (proctoringInitializedRef.current) {
+            return;
         }
 
-        return () => {
-            if (timerRef.current) {
-                clearInterval(timerRef.current);
+        // Fullscreen change handler
+        const handleFullscreenChange = () => {
+            const fullscreen = !!document.fullscreenElement ||
+                !!document.webkitFullscreenElement ||
+                !!document.mozFullScreenElement;
+
+            setIsFullscreen(fullscreen);
+
+            if (!fullscreen && testAssignment?.proctoring_settings?.fullscreen_required) {
+                handleViolation('fullscreen_exit', 'Exited fullscreen mode');
+                setShowViolationModal(true);
             }
         };
-    }, [isTestStarted, timeLeft]);
 
-    // Proctoring checks
-    useEffect(() => {
-        if (isTestStarted && testAssignment?.is_proctored) {
-            initializeProctoring();
-        }
-    }, [isTestStarted, testAssignment]);
+        // Tab switch handler
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                handleViolation('tab_switch', 'Switched tabs/windows');
+            }
+        };
 
-    const initializeProctoring = () => {
-        // Check fullscreen
-        if (testAssignment.proctoring_settings?.fullscreen_required) {
-            document.addEventListener('fullscreenchange', handleFullscreenChange);
-        }
+        // Copy/Paste prevention
+        const preventCopyPaste = (e) => {
+            e.preventDefault();
+            handleViolation('copy_paste', `${e.type} action detected`);
+            toast.error(`${e.type.charAt(0).toUpperCase() + e.type.slice(1)} is disabled for this test`);
+            return false;
+        };
 
-        // Check tab switching
-        if (testAssignment.proctoring_settings?.tab_switching_detection) {
-            document.addEventListener('visibilitychange', handleVisibilityChange);
-        }
+        // Right-click prevention
+        const preventRightClick = (e) => {
+            e.preventDefault();
+            handleViolation('right_click', 'Right-click disabled');
+            toast.error('Right-click is disabled for this test');
+            return false;
+        };
 
-        // Check copy/paste prevention
-        if (testAssignment.proctoring_settings?.copy_paste_prevention) {
+        // Keyboard shortcuts prevention
+        const preventKeyboardShortcuts = (e) => {
+            const forbiddenKeys = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12', 'Escape'];
+
+            // Prevent Ctrl+C, Ctrl+V, etc.
+            if (e.ctrlKey || e.metaKey) {
+                if (['c', 'v', 'x', 'a', 'z', 'y', 'p', 's'].includes(e.key.toLowerCase())) {
+                    e.preventDefault();
+                    handleViolation('keyboard_shortcut', `Keyboard shortcut Ctrl+${e.key} disabled`);
+                    toast.error(`Keyboard shortcut Ctrl+${e.key} is disabled`);
+                    return;
+                }
+            }
+
+            // Prevent function keys - only trigger once per key press
+            if (forbiddenKeys.includes(e.key)) {
+                e.preventDefault();
+                handleViolation('function_key', `Function key ${e.key} disabled`);
+                toast.error(`Function key ${e.key} is disabled`);
+            }
+        };
+
+        // Add event listeners
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+        document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        // Copy/paste prevention
+        if (testAssignment.proctoring_settings.copy_paste_prevention) {
             document.addEventListener('copy', preventCopyPaste);
             document.addEventListener('paste', preventCopyPaste);
             document.addEventListener('cut', preventCopyPaste);
+            document.addEventListener('contextmenu', preventRightClick);
+        }
+
+        // Keyboard shortcuts prevention
+        document.addEventListener('keydown', preventKeyboardShortcuts);
+
+        // Store references for cleanup
+        window._proctoringHandlers = {
+            handleFullscreenChange,
+            handleVisibilityChange,
+            preventCopyPaste,
+            preventRightClick,
+            preventKeyboardShortcuts
+        };
+
+        proctoringInitializedRef.current = true;
+    };
+
+    const cleanupProctoring = () => {
+        if (window._proctoringHandlers) {
+            const {
+                handleFullscreenChange,
+                handleVisibilityChange,
+                preventCopyPaste,
+                preventRightClick,
+                preventKeyboardShortcuts
+            } = window._proctoringHandlers;
+
+            document.removeEventListener('fullscreenchange', handleFullscreenChange);
+            document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+            document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            document.removeEventListener('copy', preventCopyPaste);
+            document.removeEventListener('paste', preventCopyPaste);
+            document.removeEventListener('cut', preventCopyPaste);
+            document.removeEventListener('contextmenu', preventRightClick);
+            document.removeEventListener('keydown', preventKeyboardShortcuts);
+
+            delete window._proctoringHandlers;
+        }
+
+        // Stop camera stream
+        if (mediaStream) {
+            mediaStream.getTracks().forEach(track => track.stop());
+            setMediaStream(null);
+            setCameraAccess(false);
+        }
+
+        proctoringInitializedRef.current = false;
+    };
+
+    const checkCameraStatus = async () => {
+        try {
+            if (!mediaStream) {
+                handleViolation('camera_disabled', 'Camera not active');
+                setCameraAccess(false);
+                return;
+            }
+
+            const videoTracks = mediaStream.getVideoTracks();
+
+            if (videoTracks.length === 0) {
+                handleViolation('camera_disabled', 'Camera disconnected');
+                setCameraAccess(false);
+                return;
+            }
+
+            const activeTracks = videoTracks.filter(track => track.readyState === 'live');
+
+            if (activeTracks.length === 0) {
+                handleViolation('camera_disabled', 'Camera stream inactive');
+                setCameraAccess(false);
+            } else {
+                setCameraAccess(true);
+            }
+        } catch (error) {
+            handleViolation('camera_disabled', 'Error accessing camera');
+            setCameraAccess(false);
         }
     };
 
-    const handleFullscreenChange = () => {
-        const isCurrentlyFullscreen = !!document.fullscreenElement;
-        setIsFullscreen(isCurrentlyFullscreen);
+    const handleViolation = useCallback((type, message) => {
+        setViolationCount(prevCount => {
+            const newCount = prevCount + 1;
+            return newCount;
+        });
 
-        if (!isCurrentlyFullscreen && testAssignment.proctoring_settings?.fullscreen_required) {
-            setProctoringWarnings(prev => [...prev, {
-                id: Date.now(),
-                type: 'fullscreen',
-                message: 'Please return to fullscreen mode',
-                timestamp: new Date()
-            }]);
-        }
-    };
-
-    const handleVisibilityChange = () => {
-        if (document.hidden) {
-            setProctoringWarnings(prev => [...prev, {
-                id: Date.now(),
-                type: 'tab_switch',
-                message: 'Tab switching detected',
-                timestamp: new Date()
-            }]);
-        }
-    };
-
-    const preventCopyPaste = (e) => {
-        e.preventDefault();
+        // Add to proctoring warnings with auto-remove
+        const warningId = Date.now();
         setProctoringWarnings(prev => [...prev, {
-            id: Date.now(),
-            type: 'copy_paste',
-            message: 'Copy/paste is disabled for this test',
-            timestamp: new Date()
+            id: warningId,
+            type,
+            message,
+            timestamp: new Date().toISOString(),
+            count: violationCountRef.current + 1
         }]);
-        return false;
-    };
+
+        // Auto-remove warning after 5 seconds
+        setTimeout(() => {
+            setProctoringWarnings(prev => prev.filter(warning => warning.id !== warningId));
+        }, 5000);
+
+        // Save to database if test attempt exists
+        if (testAttemptId) {
+            updateProctoringViolation(testAttemptId, {
+                type,
+                message,
+                timestamp: new Date().toISOString(),
+                totalViolations: violationCountRef.current + 1
+            });
+        }
+
+        // toast.error(`Violationsss: ${message}`);
+    }, [testAttemptId]);
 
     const requestFullscreen = async () => {
         try {
-            if (!document.fullscreenElement) {
-                await document.documentElement.requestFullscreen();
+            const element = document.documentElement;
+            if (element.requestFullscreen) {
+                await element.requestFullscreen();
+            } else if (element.webkitRequestFullscreen) {
+                await element.webkitRequestFullscreen();
+            } else if (element.mozRequestFullScreen) {
+                await element.mozRequestFullScreen();
             }
+            return true;
         } catch (error) {
-            console.error('Error entering fullscreen:', error);
-            toast.error('Could not enter fullscreen mode');
+            return false;
         }
     };
 
-    const exitFullscreen = async () => {
+    const requestCameraAccess = async () => {
         try {
-            if (document.fullscreenElement) {
-                await document.exitFullscreen();
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                toast.error('Camera access not supported in this browser');
+                return false;
             }
+
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    facingMode: 'user'
+                },
+                audio: false
+            });
+
+            setMediaStream(stream);
+            setCameraAccess(true);
+
+            // Create a hidden video element to use the stream
+            const video = document.createElement('video');
+            video.srcObject = stream;
+            video.muted = true;
+            video.play().catch(e => console.warn('Video play warning:', e));
+
+            return true;
         } catch (error) {
-            console.error('Error exiting fullscreen:', error);
+            if (error.name === 'NotAllowedError') {
+                toast.error('Camera access was denied. Please allow camera permissions.');
+            } else if (error.name === 'NotFoundError') {
+                toast.error('No camera found. Please connect a camera.');
+            } else {
+                toast.error('Failed to access camera. Please check permissions.');
+            }
+            setCameraAccess(false);
+            return false;
         }
     };
 
+    const startTest = async () => {
+        if (isStartingTest) return;
+
+        setIsStartingTest(true);
+
+        // Request camera access first if required
+        if (testAssignment?.is_proctored && testAssignment?.proctoring_settings?.camera_required) {
+            const cameraGranted = await requestCameraAccess();
+            if (!cameraGranted) {
+                toast.error('Camera access is required to start the test');
+                setIsStartingTest(false);
+                return;
+            }
+        }
+
+        // Request fullscreen if required
+        if (testAssignment?.is_proctored && testAssignment?.proctoring_settings?.fullscreen_required) {
+            const success = await requestFullscreen();
+            if (!success) {
+                toast.error('Failed to enter fullscreen');
+                setIsStartingTest(false);
+                return;
+            }
+        }
+
+        // Start test attempt in database
+        try {
+            const attemptResult = await startTestAttempt(testAssignmentId, user.id);
+            if (!attemptResult.success) {
+                toast.error(attemptResult.message || 'Failed to start test attempt');
+                setIsStartingTest(false);
+                return;
+            }
+            setTestAttemptId(attemptResult.attemptId);
+        } catch (error) {
+            toast.error('Error starting test attempt');
+            setIsStartingTest(false);
+            return;
+        }
+
+        setIsTestStarted(true);
+        setShowInstructions(false);
+        setIsStartingTest(false);
+        toast.success('Test started! Proctoring active.');
+    };
+
+    const resumeTest = async () => {
+        const success = await requestFullscreen();
+        if (success) {
+            setShowViolationModal(false);
+        }
+    };
+
+    // Test functions
     const formatTime = (seconds) => {
         const hours = Math.floor(seconds / 3600);
         const minutes = Math.floor((seconds % 3600) / 60);
@@ -238,11 +535,19 @@ export default function TakeTestPage() {
         return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     };
 
-    const handleStartTest = () => {
-        if (testAssignment?.is_proctored && testAssignment.proctoring_settings?.fullscreen_required) {
-            requestFullscreen();
+    const formatCountdown = (seconds) => {
+        if (seconds < 60) {
+            return `${seconds} seconds`;
+        } else if (seconds < 3600) {
+            const minutes = Math.ceil(seconds / 60);
+            return `${minutes} minute${minutes > 1 ? 's' : ''}`;
+        } else if (seconds < 86400) {
+            const hours = Math.ceil(seconds / 3600);
+            return `${hours} hour${hours > 1 ? 's' : ''}`;
+        } else {
+            const days = Math.ceil(seconds / 86400);
+            return `${days} day${days > 1 ? 's' : ''}`;
         }
-        setShowInstructions(false);
     };
 
     const handleResponseChange = (questionId, response) => {
@@ -254,6 +559,33 @@ export default function TakeTestPage() {
                 timestamp: new Date().toISOString()
             }
         }));
+    };
+
+    const saveAllResponses = async () => {
+        if (!testAttemptId || Object.keys(responses).length === 0) return;
+
+        try {
+            const submissionPromises = Object.entries(responses).map(([questionId, response]) =>
+                submitTestResponse(testAttemptId, questionId, response)
+            );
+            await Promise.allSettled(submissionPromises);
+        } catch (error) {
+            console.error('Error auto-saving responses:', error);
+        }
+    };
+
+    const handleSaveResponse = async (questionId) => {
+        if (!testAttemptId) return;
+
+        const response = responses[questionId];
+        if (response) {
+            try {
+                await submitTestResponse(testAttemptId, questionId, response);
+                toast.success('Response saved');
+            } catch (error) {
+                toast.error('Failed to save response');
+            }
+        }
     };
 
     const handleFlagQuestion = (questionId) => {
@@ -284,11 +616,28 @@ export default function TakeTestPage() {
         }
     };
 
+    const submitAllResponses = async () => {
+        // Ensure all questions have at least a null response in the database
+        const allSubmissionPromises = questions.map(question => {
+            const response = responses[question.id] || {
+                answer: null,
+                selectedOptions: null,
+                questionType: question.question_type,
+                timestamp: new Date().toISOString()
+            };
+            return submitTestResponse(testAttemptId, question.id, response);
+        });
+
+        await Promise.allSettled(allSubmissionPromises);
+    };
+
     const handleAutoSubmit = async () => {
         if (isTestCompleted) return;
 
         setIsSubmitting(true);
-        toast.loading('Time\'s up! Submitting your test...', { duration: 5000 });
+
+        // Cleanup proctoring immediately when test ends
+        cleanupProctoring();
 
         try {
             await submitAllResponses();
@@ -297,39 +646,26 @@ export default function TakeTestPage() {
             if (result.success) {
                 setIsTestCompleted(true);
                 toast.success('Test submitted successfully!');
-                // Redirect to results or applications page after delay
-                setTimeout(() => {
-                    router.push('/applications');
-                }, 3000);
             } else {
                 toast.error(result.message || 'Failed to submit test');
             }
         } catch (error) {
-            console.error('Error auto-submitting test:', error);
             toast.error('Error submitting test');
         } finally {
             setIsSubmitting(false);
         }
     };
-
-    const submitAllResponses = async () => {
-        const submissionPromises = Object.entries(responses).map(([questionId, response]) =>
-            submitTestResponse(testAttemptId, questionId, response)
-        );
-        await Promise.allSettled(submissionPromises);
-    };
-
     const handleSubmitTest = async () => {
         if (isSubmitting) return;
+        setShowSubmitModal(true);
+    };
 
-        const confirmed = window.confirm(
-            'Are you sure you want to submit the test? You will not be able to make changes after submission.'
-        );
-
-        if (!confirmed) return;
-
+    const confirmSubmitTest = async () => {
         setIsSubmitting(true);
-        toast.loading('Submitting your test...', { duration: 5000 });
+        setShowSubmitModal(false);
+
+        // Cleanup proctoring when manually submitting
+        cleanupProctoring();
 
         try {
             await submitAllResponses();
@@ -338,15 +674,10 @@ export default function TakeTestPage() {
             if (result.success) {
                 setIsTestCompleted(true);
                 toast.success('Test submitted successfully!');
-                // Redirect after delay
-                setTimeout(() => {
-                    router.push('/applications');
-                }, 3000);
             } else {
                 toast.error(result.message || 'Failed to submit test');
             }
         } catch (error) {
-            console.error('Error submitting test:', error);
             toast.error('Error submitting test');
         } finally {
             setIsSubmitting(false);
@@ -359,10 +690,11 @@ export default function TakeTestPage() {
 
         const response = responses[question.id];
         if (flaggedQuestions.has(question.id)) return 'flagged';
-        if (response) return 'answered';
+        if (response && (response.answer || response.selectedOptions)) return 'answered';
         return 'not-answered';
     };
 
+    // Render question function
     const renderQuestion = (question) => {
         const response = responses[question.id] || {};
 
@@ -388,7 +720,7 @@ export default function TakeTestPage() {
                                             selectedOptions: [e.target.value],
                                             questionType: question.question_type
                                         })}
-                                        className="w-4 h-4 text-indigo-600 focus:ring-indigo-500"
+                                        className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                                     />
                                     <div className="flex items-center gap-3 flex-1">
                                         <span className="font-semibold text-gray-700 min-w-6">{key}.</span>
@@ -426,7 +758,7 @@ export default function TakeTestPage() {
                                                 questionType: question.question_type
                                             });
                                         }}
-                                        className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 rounded"
+                                        className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 rounded cursor-pointer"
                                     />
                                     <div className="flex items-center gap-3 flex-1">
                                         <span className="font-semibold text-gray-700 min-w-6">{key}.</span>
@@ -449,7 +781,7 @@ export default function TakeTestPage() {
                             })}
                             placeholder="Type your answer here..."
                             rows="8"
-                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 resize-none"
+                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 resize-none cursor-text"
                         />
                     </div>
                 );
@@ -461,7 +793,7 @@ export default function TakeTestPage() {
                             <div className="flex items-center justify-between mb-4">
                                 <span className="text-gray-400">Code Editor</span>
                                 <div className="flex gap-2">
-                                    <select className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs">
+                                    <select className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs cursor-pointer">
                                         <option>JavaScript</option>
                                         <option>Python</option>
                                         <option>Java</option>
@@ -477,7 +809,7 @@ export default function TakeTestPage() {
                                 })}
                                 placeholder="Write your code here..."
                                 rows="12"
-                                className="w-full bg-gray-800 text-gray-100 border-0 focus:ring-0 font-mono resize-none"
+                                className="w-full bg-gray-800 text-gray-100 border-0 focus:ring-0 font-mono resize-none cursor-text"
                                 style={{ fontFamily: 'Monaco, Consolas, monospace' }}
                             />
                         </div>
@@ -489,6 +821,7 @@ export default function TakeTestPage() {
         }
     };
 
+    // Loading state
     if (isLoading) {
         return (
             <>
@@ -504,9 +837,8 @@ export default function TakeTestPage() {
         );
     }
 
-    // Test hasn't started yet - show countdown
-    if (!isTestStarted && timeLeft > 0 && new Date() < new Date(testAssignment.test_start_date)) {
-        const startTime = new Date(testAssignment.test_start_date);
+    // Test hasn't started yet
+    if (!isTestStarted && testAssignment?.availability === 'not_started') {
         return (
             <>
                 <Navbar />
@@ -517,22 +849,35 @@ export default function TakeTestPage() {
                             <Clock className="w-8 h-8 text-blue-600" />
                         </div>
                         <h2 className="text-2xl font-bold text-gray-900 mb-4">Test Not Started Yet</h2>
-                        <p className="text-gray-600 mb-6">
-                            This test will begin on {startTime.toLocaleDateString()} at {startTime.toLocaleTimeString()}
+                        <p className="text-gray-600 mb-4">
+                            This test is scheduled to begin on <strong>{new Date(testAssignment.test_start_date).toLocaleDateString()}</strong> at <strong>{new Date(testAssignment.test_start_date).toLocaleTimeString()}</strong>.
                         </p>
                         <div className="bg-gray-50 rounded-lg p-4 mb-6">
                             <div className="text-3xl font-bold text-indigo-600 mb-2">
                                 {formatTime(timeLeft)}
                             </div>
-                            <div className="text-sm text-gray-600">Time until test starts</div>
+                            <div className="text-sm text-gray-600">
+                                Test will begin in {formatCountdown(timeLeft)}
+                            </div>
                         </div>
-                        <Link
-                            href="/applications"
-                            className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all duration-200"
-                        >
-                            <ArrowLeft className="w-5 h-5" />
-                            Back to Applications
-                        </Link>
+                        <div className="space-y-3">
+                            <button
+                                disabled
+                                className="w-full px-6 py-3 bg-gray-400 text-white rounded-lg font-semibold cursor-not-allowed opacity-50"
+                            >
+                                Start Test (Available Soon)
+                            </button>
+                            <div className="text-sm text-gray-500">
+                                Please return to this page once the test start time has arrived.
+                            </div>
+                            <Link
+                                href="/applications"
+                                className="inline-flex items-center gap-2 px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg font-semibold hover:border-gray-400 transition-all duration-200 cursor-pointer"
+                            >
+                                <ArrowLeft className="w-5 h-5" />
+                                Back to Applications
+                            </Link>
+                        </div>
                     </div>
                 </div>
                 <Footer />
@@ -541,7 +886,7 @@ export default function TakeTestPage() {
     }
 
     // Test expired
-    if (!isTestStarted && new Date() > new Date(testAssignment.test_end_date)) {
+    if (!isTestStarted && testAssignment?.availability === 'expired') {
         return (
             <>
                 <Navbar />
@@ -557,7 +902,7 @@ export default function TakeTestPage() {
                         </p>
                         <Link
                             href="/applications"
-                            className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all duration-200"
+                            className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all duration-200 cursor-pointer"
                         >
                             <ArrowLeft className="w-5 h-5" />
                             Back to Applications
@@ -582,12 +927,25 @@ export default function TakeTestPage() {
                         </div>
                         <h2 className="text-2xl font-bold text-gray-900 mb-4">Test Submitted Successfully!</h2>
                         <p className="text-gray-600 mb-6">
-                            Thank you for completing the test. Your results will be available soon.
+                            Thank you for completing the test. Your responses have been recorded.
                         </p>
+                        <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
+                            <h4 className="font-semibold mb-2">Submission Details:</h4>
+                            <p className="text-sm text-gray-600">• Total Questions: {questions.length}</p>
+                            <p className="text-sm text-gray-600">• Questions Answered: {Object.keys(responses).filter(id => responses[id].answer || responses[id].selectedOptions).length}</p>
+                            <p className="text-sm text-gray-600">• Proctoring Violations: {violationCount}</p>
+                            <p className="text-sm text-green-600">• Camera & Proctoring: Disabled</p>
+                        </div>
                         <div className="space-y-3">
+                            <button
+                                onClick={() => console.log('Test responses:', responses, 'Violations:', violationCount)}
+                                className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all duration-200 cursor-pointer"
+                            >
+                                View Submission Details (Console)
+                            </button>
                             <Link
                                 href="/applications"
-                                className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all duration-200"
+                                className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all duration-200 cursor-pointer"
                             >
                                 <ArrowLeft className="w-5 h-5" />
                                 Back to Applications
@@ -601,7 +959,11 @@ export default function TakeTestPage() {
     }
 
     // Instructions screen
-    if (showInstructions && isTestStarted) {
+    if (showInstructions && !isTestStarted && testAssignment?.availability === 'available') {
+        const isProctored = testAssignment?.is_proctored;
+        const isCameraRequired = testAssignment.proctoring_settings?.camera_required;
+        const isStartButtonEnabled = !isProctored || (isProctored && cameraAccess);
+
         return (
             <>
                 <Navbar />
@@ -643,15 +1005,41 @@ export default function TakeTestPage() {
                                             <p>This is a proctored test with the following restrictions:</p>
                                             <ul className="list-disc list-inside space-y-1">
                                                 {testAssignment.proctoring_settings?.fullscreen_required && (
-                                                    <li>Fullscreen mode is required</li>
+                                                    <li>Fullscreen mode is required throughout the test</li>
                                                 )}
                                                 {testAssignment.proctoring_settings?.tab_switching_detection && (
-                                                    <li>Tab switching will be monitored</li>
+                                                    <li>Tab switching will be monitored and recorded</li>
                                                 )}
                                                 {testAssignment.proctoring_settings?.copy_paste_prevention && (
                                                     <li>Copy/paste functionality is disabled</li>
                                                 )}
+                                                <li>Camera access is required for monitoring</li>
+                                                <li>Violations may affect your test results</li>
                                             </ul>
+                                        </div>
+
+                                        {/* Camera Check Section */}
+                                        <div className="mt-4 p-4 bg-white rounded-lg border">
+                                            <div className="flex items-center justify-between mb-3">
+                                                <div className="flex items-center gap-2">
+                                                    <Camera className={`w-5 h-5 ${cameraAccess ? 'text-green-600' : 'text-red-600'}`} />
+                                                    <span className="font-semibold">Camera Access</span>
+                                                </div>
+                                                <div className={`px-3 py-1 rounded-full text-sm font-semibold ${cameraAccess ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                    {cameraAccess ? 'Enabled' : 'Not Enabled'}
+                                                </div>
+                                            </div>
+                                            {!cameraAccess && (
+                                                <div className="text-sm text-gray-600 mb-3">
+                                                    Camera access is required to start this proctored test.
+                                                </div>
+                                            )}
+                                            <button
+                                                onClick={requestCameraAccess}
+                                                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all duration-200 cursor-pointer"
+                                            >
+                                                {cameraAccess ? 'Camera Enabled ✓' : 'Enable Camera Access'}
+                                            </button>
                                         </div>
                                     </div>
                                 )}
@@ -668,6 +1056,7 @@ export default function TakeTestPage() {
                                                 <p>• Flag questions you want to review later</p>
                                                 <p>• The timer will show the remaining time</p>
                                                 <p>• Once submitted, you cannot change your answers</p>
+                                                <p>• The test will auto-submit when time expires</p>
                                             </>
                                         )}
                                     </div>
@@ -683,6 +1072,10 @@ export default function TakeTestPage() {
                                         <li>Do not switch tabs or applications</li>
                                         <li>Ensure you have a stable internet connection</li>
                                         <li>The test will auto-submit when time expires</li>
+                                        <li>Any violation may be reported to the recruiter</li>
+                                        {testAssignment?.is_proctored && (
+                                            <li>Camera must remain enabled throughout the test</li>
+                                        )}
                                     </ul>
                                 </div>
                             </div>
@@ -690,18 +1083,38 @@ export default function TakeTestPage() {
                             <div className="flex flex-col sm:flex-row gap-4 justify-center pt-6 border-t border-gray-200">
                                 <Link
                                     href="/applications"
-                                    className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg font-semibold hover:border-gray-400 transition-all duration-200 text-center"
+                                    className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg font-semibold hover:border-gray-400 transition-all duration-200 text-center cursor-pointer"
                                 >
                                     Cancel
                                 </Link>
                                 <button
-                                    onClick={handleStartTest}
-                                    className="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
+                                    onClick={startTest}
+                                    disabled={!isStartButtonEnabled || isStartingTest}
+                                    className={`px-6 py-3 rounded-lg font-semibold transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center gap-2 ${isStartButtonEnabled
+                                        ? 'bg-green-600 text-white hover:bg-green-700 cursor-pointer'
+                                        : 'bg-gray-400 text-white cursor-not-allowed opacity-50'
+                                        }`}
                                 >
-                                    <Play className="w-5 h-5" />
-                                    Start Test
+                                    {isStartingTest ? (
+                                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                                    ) : (
+                                        <>
+                                            <Play className="w-5 h-5" />
+                                            {testAssignment?.is_proctored && !cameraAccess
+                                                ? 'Enable Camera to Start Test'
+                                                : 'Start Test'
+                                            }
+                                        </>
+                                    )}
                                 </button>
                             </div>
+
+                            {testAssignment?.is_proctored && !cameraAccess && (
+                                <div className="mt-4 text-center text-sm text-red-600">
+                                    <AlertCircle className="w-4 h-4 inline mr-1" />
+                                    Camera access is required to start this proctored test.
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -717,7 +1130,7 @@ export default function TakeTestPage() {
         <>
             <Navbar />
             <Toaster />
-            <div className="min-h-screen bg-gray-50" ref={fullscreenRef}>
+            <div className="min-h-screen bg-gray-50">
                 {/* Header Bar */}
                 <div className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-50">
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -736,32 +1149,43 @@ export default function TakeTestPage() {
                                         </p>
                                     </div>
                                 </div>
+
+                                {/* Violation Count */}
+                                {violationCount > 0 && (
+                                    <div className="flex items-center gap-2 bg-red-100 text-red-700 px-3 py-1 rounded-full text-sm font-semibold">
+                                        <AlertTriangle className="w-4 h-4" />
+                                        Violations: {violationCount}
+                                    </div>
+                                )}
                             </div>
 
                             <div className="flex items-center gap-4">
-                                {/* Proctoring Warnings */}
-                                {proctoringWarnings.length > 0 && (
-                                    <div className="relative">
-                                        <button
-                                            onClick={() => setProctoringWarnings([])}
-                                            className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
-                                        >
-                                            <AlertCircle className="w-5 h-5" />
-                                            <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-600 text-white text-xs rounded-full flex items-center justify-center">
-                                                {proctoringWarnings.length}
-                                            </span>
-                                        </button>
-                                    </div>
-                                )}
-
-                                {/* Fullscreen Toggle */}
+                                {/* Proctoring Status */}
                                 {testAssignment?.is_proctored && (
-                                    <button
-                                        onClick={isFullscreen ? exitFullscreen : requestFullscreen}
-                                        className="p-2 text-gray-600 hover:text-gray-900 transition-colors"
-                                    >
-                                        {isFullscreen ? <Minimize className="w-5 h-5" /> : <Fullscreen className="w-5 h-5" />}
-                                    </button>
+                                    <div className="flex items-center gap-2 text-sm">
+                                        {cameraAccess ? (
+                                            <div className="flex items-center gap-1 text-green-600">
+                                                <Camera className="w-4 h-4" />
+                                                <span>Camera Active</span>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-1 text-red-600">
+                                                <Camera className="w-4 h-4" />
+                                                <span>Camera Disabled</span>
+                                            </div>
+                                        )}
+                                        {isFullscreen ? (
+                                            <div className="flex items-center gap-1 text-green-600">
+                                                <Monitor className="w-4 h-4" />
+                                                <span>Fullscreen</span>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-1 text-red-600">
+                                                <Monitor className="w-4 h-4" />
+                                                <span>Fullscreen Required</span>
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
 
                                 {/* Timer */}
@@ -776,7 +1200,7 @@ export default function TakeTestPage() {
                                 <button
                                     onClick={handleSubmitTest}
                                     disabled={isSubmitting}
-                                    className="px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-all duration-200 disabled:opacity-50 flex items-center gap-2"
+                                    className="px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-all duration-200 disabled:opacity-50 flex items-center gap-2 cursor-pointer"
                                 >
                                     {isSubmitting ? (
                                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
@@ -811,7 +1235,7 @@ export default function TakeTestPage() {
                                             <button
                                                 key={question.id}
                                                 onClick={() => goToQuestion(index)}
-                                                className={`w-10 h-10 rounded-lg border-2 font-semibold text-sm transition-all ${statusColors[status]
+                                                className={`w-10 h-10 rounded-lg border-2 font-semibold text-sm transition-all cursor-pointer ${statusColors[status]
                                                     } ${isCurrent ? 'ring-2 ring-indigo-500 ring-offset-2' : ''
                                                     }`}
                                             >
@@ -867,7 +1291,7 @@ export default function TakeTestPage() {
 
                                     <button
                                         onClick={() => handleFlagQuestion(currentQuestion.id)}
-                                        className={`p-2 rounded-lg transition-colors ${flaggedQuestions.has(currentQuestion.id)
+                                        className={`p-2 rounded-lg transition-colors cursor-pointer ${flaggedQuestions.has(currentQuestion.id)
                                             ? 'bg-yellow-100 text-yellow-600'
                                             : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                                             }`}
@@ -902,7 +1326,7 @@ export default function TakeTestPage() {
                                     <button
                                         onClick={goToPrevQuestion}
                                         disabled={currentQuestionIndex === 0}
-                                        className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg font-semibold hover:border-gray-400 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg font-semibold hover:border-gray-400 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                                     >
                                         <ChevronLeft className="w-5 h-5" />
                                         Previous
@@ -910,13 +1334,8 @@ export default function TakeTestPage() {
 
                                     <div className="flex items-center gap-3">
                                         <button
-                                            onClick={() => {
-                                                const response = responses[currentQuestion.id];
-                                                if (response) {
-                                                    toast.success('Response saved');
-                                                }
-                                            }}
-                                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all duration-200"
+                                            onClick={() => handleSaveResponse(currentQuestion.id)}
+                                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all duration-200 cursor-pointer"
                                         >
                                             <Save className="w-4 h-4" />
                                             Save
@@ -925,7 +1344,7 @@ export default function TakeTestPage() {
                                         {currentQuestionIndex < questions.length - 1 ? (
                                             <button
                                                 onClick={goToNextQuestion}
-                                                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all duration-200"
+                                                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all duration-200 cursor-pointer"
                                             >
                                                 Next
                                                 <ChevronRight className="w-5 h-5" />
@@ -934,7 +1353,7 @@ export default function TakeTestPage() {
                                             <button
                                                 onClick={handleSubmitTest}
                                                 disabled={isSubmitting}
-                                                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-all duration-200 disabled:opacity-50"
+                                                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-all duration-200 disabled:opacity-50 cursor-pointer"
                                             >
                                                 <Send className="w-4 h-4" />
                                                 Submit Test
@@ -948,7 +1367,74 @@ export default function TakeTestPage() {
                 </div>
             </div>
 
-            {/* Proctoring Warnings Modal */}
+            {/* Violation Modal */}
+            {showViolationModal && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-lg flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl max-w-md w-full p-6 text-center">
+                        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <AlertTriangle className="w-8 h-8 text-red-600" />
+                        </div>
+                        <h3 className="text-2xl font-bold text-gray-900 mb-4">Fullscreen Violation</h3>
+                        <p className="text-gray-600 mb-6">
+                            You have exited fullscreen mode. Please return to fullscreen to continue.
+                        </p>
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                            <p className="text-red-700 font-semibold">Total Violations: {violationCount}</p>
+                        </div>
+                        <button
+                            onClick={resumeTest}
+                            className="w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700 transition-colors cursor-pointer"
+                        >
+                            Return to Fullscreen
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Submit Confirmation Modal */}
+            {showSubmitModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl max-w-md w-full p-6 text-center">
+                        <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <Send className="w-8 h-8 text-blue-600" />
+                        </div>
+                        <h3 className="text-2xl font-bold text-gray-900 mb-4">Submit Test</h3>
+                        <p className="text-gray-600 mb-6">
+                            Are you sure you want to submit the test?
+                            You will not be able to make changes after submission.
+                        </p>
+                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+                            <p className="text-yellow-700 font-semibold">
+                                Proctoring Violations: {violationCount}
+                            </p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <button
+                                onClick={() => setShowSubmitModal(false)}
+                                className="px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg font-semibold hover:border-gray-400 transition-all duration-200 cursor-pointer"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmSubmitTest}
+                                disabled={isSubmitting}
+                                className="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                            >
+                                {isSubmitting ? (
+                                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                                ) : (
+                                    <>
+                                        <Send className="w-5 h-5" />
+                                        Submit Test
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Proctoring Warnings */}
             {proctoringWarnings.length > 0 && (
                 <div className="fixed bottom-4 right-4 max-w-sm">
                     {proctoringWarnings.slice(-3).map(warning => (
@@ -957,8 +1443,16 @@ export default function TakeTestPage() {
                             className="bg-red-50 border border-red-200 rounded-lg p-4 mb-2 shadow-lg"
                         >
                             <div className="flex items-center gap-2">
-                                <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />
-                                <p className="text-sm text-red-700">{warning.message}</p>
+                                <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0" />
+                                <div>
+                                    <p className="text-sm text-red-700 font-semibold">
+                                        Violation #{warning.count}
+                                    </p>
+                                    <p className="text-sm text-red-600">{warning.message}</p>
+                                    <p className="text-xs text-red-500 mt-1">
+                                        {new Date(warning.timestamp).toLocaleTimeString()}
+                                    </p>
+                                </div>
                             </div>
                         </div>
                     ))}
