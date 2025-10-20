@@ -9,13 +9,11 @@ export async function checkApplication(jobId, applicantId) {
             [jobId, applicantId]
         );
 
-        console.log('checkApplication result:', result);
-
         if (result.rowCount > 0) {
             return {
                 success: true,
                 hasApplied: true,
-                application: result[0]
+                application: result.rows[0]
             };
         }
 

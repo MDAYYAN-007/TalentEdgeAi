@@ -36,10 +36,10 @@ export async function parseResume(formData) {
         const parsed = {
             name: data.data.candidateName?.raw || "",
             email: data.data.emails?.[0] || "",
-            phone: data.data.phoneNumbers?.[0]?.raw || "",
+            phone: data.data.phoneNumber?.[0]?.raw || "",
             linkedinUrl: data.data?.websites?.find((url) => url.includes("linkedin")) || "",
             portfolioUrl: data.data?.website,
-            skills: data.data.skills?.map((s) => s?.parsed?.name) || [],
+            skills: data.data.skill?.map((s) => s?.parsed?.name) || [],
             education: data.data.education?.map((e) => ({
                 degree: e?.parsed?.educationAccreditation?.parsed,
                 institution: e?.parsed?.educationOrganization?.parsed,
@@ -52,7 +52,7 @@ export async function parseResume(formData) {
                 duration: exp?.parsed?.workExperienceDates?.raw,
                 description: exp?.parsed?.workExperienceDescription?.parsed,
             })) || [],
-            projects: data.data.projects?.map((p) => ({
+            projects: data.data.project?.map((p) => ({
                 title: p?.parsed?.projectTitle?.parsed,
                 description: p?.parsed?.projectDescription?.parsed,
                 githubUrl: p?.parsed?.githubUrl,

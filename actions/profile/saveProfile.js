@@ -68,6 +68,13 @@ export async function saveProfile(profileData) {
 
         const result = await query(sql, values);
 
+        if (result.rowCount > 0) {
+            await query(
+                "UPDATE users SET isprofilecomplete = $1 WHERE id = $2",
+                [isProfileComplete, userId]
+            );
+        }
+
         // Get user's current org info to include in token
         const userRes = await query("SELECT org_id FROM users WHERE id = $1", [userId]);
         const userData = userRes.rows[0];

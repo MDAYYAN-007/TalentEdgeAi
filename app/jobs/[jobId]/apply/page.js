@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { jwtDecode } from 'jwt-decode';
+import { parseResume } from '@/actions/resume/parseResume';
+import { UploadCloud, Loader2 } from 'lucide-react';
 import { getJobDetails } from '@/actions/jobs/getJobDetails';
 import { getProfile } from '@/actions/profile/getProfile';
 import { submitApplication } from '@/actions/applications/submitApplication';
@@ -14,6 +16,7 @@ import { ArrowLeft, CheckCircle, AlertCircle, Edit3, Save, X, Star, Zap, Plus, T
 import toast, { Toaster } from 'react-hot-toast';
 import Link from 'next/link';
 import { scoreResume } from '@/actions/applications/scoreResume';
+import { updateUserToken } from '@/actions/auth/updateToken';
 
 export default function ApplyJobPage() {
     const params = useParams();
@@ -37,6 +40,11 @@ export default function ApplyJobPage() {
     const [isScoring, setIsScoring] = useState(false);
     const [aiFeedback, setAiFeedback] = useState(null);
     const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+    const [isProfileComplete, setIsProfileComplete] = useState(false);
+    const [forceProfileComplete, setForceProfileComplete] = useState(false); // New state to force profile completion
+    const [isUploading, setIsUploading] = useState(false);
+    const [resumeFile, setResumeFile] = useState(null);
+    const [applicationId, setApplicationId] = useState(null);
 
     useEffect(() => {
         const token = localStorage.getItem('token');
@@ -51,48 +59,72 @@ export default function ApplyJobPage() {
             setUser(decoded);
 
             if (!decoded.isProfileComplete) {
-                toast.error('Please complete your profile before applying');
-                router.push('/profile/edit');
-                return;
+                setIsProfileComplete(false);
+                setForceProfileComplete(true); // Force profile completion
+            } else {
+                setIsProfileComplete(true);
             }
 
-            fetchJobAndProfile(jobId, decoded.id, decoded.name, decoded.email);
+            fetchJobAndProfile(jobId, decoded);
         } catch (error) {
             console.error('Error decoding token:', error);
             router.push('/signin');
         }
     }, [jobId, router]);
 
-    const fetchJobAndProfile = async (jobId, userId, name, email) => {
+    const fetchJobAndProfile = async (jobId, decoded) => {
         try {
-            const [jobResult, profileResult, applicationResult] = await Promise.all([
-                getJobDetails(jobId),
-                getProfile(userId),
-                checkApplication(jobId, userId)
-            ]);
+            const jobResult = await getJobDetails(jobId);
+            const profileResult = await getProfile(decoded.id);
+            const applicationResult = await checkApplication(jobId, decoded.id);
 
             if (jobResult.success && jobResult.job) {
                 setJob(jobResult.job);
             } else {
                 toast.error('Job not found');
-                router.push('/jobs');
                 return;
             }
 
             if (profileResult.success && profileResult.profile) {
-                const newData = { ...profileResult.profile, name: name, email: email };
+                const newData = { ...profileResult.profile, name: decoded.name, email: decoded.email };
                 setProfile(newData);
                 setApplicationData(newData);
                 setTempApplicationData(newData);
+                if (!user?.isProfileComplete) {
+                    const newToken = {
+                        id: decoded.id,
+                        email: decoded.email,
+                        role: decoded.role,
+                        name: decoded.name,
+                        orgName: decoded.orgName,
+                        isProfileComplete: true,
+                        orgId: decoded.org_id
+                    }
+                    const signedToken = await updateUserToken(newToken);
+                    localStorage.setItem('token', signedToken.token);
+                    setUser(newToken);
+                }
+                setIsProfileComplete(true);
+                setForceProfileComplete(false);
             } else {
-                toast.error('Profile not found');
-                router.push('/profile/edit');
-                return;
+                setIsProfileComplete(false);
+                setForceProfileComplete(true);
+                setTempApplicationData({
+                    name: decoded.name,
+                    email: decoded.email,
+                    phone: '',
+                    linkedin_url: '',
+                    portfolio_url: '',
+                    experiences: [],
+                    education: [],
+                    skills: [],
+                    projects: []
+                });
             }
-
 
             if (applicationResult.success) {
                 setHasApplied(applicationResult.hasApplied);
+                setApplicationId(applicationResult.application.id || null);
                 setExistingApplication(applicationResult.application || null);
 
                 if (applicationResult.hasApplied) {
@@ -107,6 +139,12 @@ export default function ApplyJobPage() {
             setIsLoading(false);
         }
     };
+
+    useEffect(() => {
+        if (!isLoading && forceProfileComplete) {
+            setIsEditModalOpen(true);
+        }
+    }, [isLoading, forceProfileComplete]);
 
     const handleFieldChange = (field, value) => {
         setTempApplicationData(prev => ({
@@ -140,6 +178,69 @@ export default function ApplyJobPage() {
 
     const handleSaveProfile = async () => {
         setIsSavingProfile(true);
+
+        if (tempApplicationData?.name?.trim() === null) {
+            toast.error("Full Name is required.");
+            setActiveTab("basic");
+            setIsSavingProfile(false);
+            return;
+        }
+
+        if (!tempApplicationData?.phone?.trim()) {
+            toast.error("Phone number is required.");
+            setActiveTab("basic");
+            setIsSavingProfile(false);
+            return;
+        }
+
+        const phoneRegex = /^[+]?[\d\s()-]{7,20}$/;
+        if (!phoneRegex.test(tempApplicationData?.phone.trim())) {
+            toast.error("Please enter a valid phone number.");
+            setActiveTab("basic");
+            setIsSavingProfile(false);
+            return;
+        }
+
+        if (!tempApplicationData?.skills?.length) {
+            toast.error("Please add at least one skill.");
+            setActiveTab("skills");
+            setIsSavingProfile(false);
+            return;
+        }
+
+        if (tempApplicationData?.experiences?.length > 0) {
+            for (const exp of tempApplicationData?.experiences) {
+                if (!exp?.jobTitle || !exp?.company || !exp?.duration) {
+                    toast.error("Please fill all required fields in Experience.");
+                    setActiveTab("experience");
+                    setIsSavingProfile(false);
+                    return;
+                }
+            }
+        }
+
+        if (tempApplicationData?.education?.length > 0) {
+            for (const edu of tempApplicationData?.education) {
+                if (!edu?.degree || !edu?.institution) {
+                    toast.error("Please fill all required fields in Education.");
+                    setActiveTab("education");
+                    setIsSavingProfile(false);
+                    return;
+                }
+            }
+        }
+
+        if (tempApplicationData?.projects?.length > 0) {
+            for (const proj of tempApplicationData?.projects) {
+                if (!proj?.title || !proj?.description) {
+                    toast.error("Please fill all required fields in Projects.");
+                    setActiveTab("projects");
+                    setIsSavingProfile(false);
+                    return;
+                }
+            }
+        }
+
         try {
             const result = await saveProfile({
                 userId: user.id,
@@ -160,20 +261,88 @@ export default function ApplyJobPage() {
                 setResumeScore(null);
                 setProfile(tempApplicationData);
                 setApplicationData(tempApplicationData);
-                toast.success('Profile updated successfully!');
+                setIsProfileComplete(true);
+                setForceProfileComplete(false);
+                toast.success('Profile created successfully!');
                 setIsEditModalOpen(false);
+
+                // Update user state with new token data
+                const decoded = jwtDecode(result.token);
+                setUser(decoded);
             } else {
-                toast.error('Failed to update profile');
+                toast.error('Failed to create profile');
             }
         } catch (error) {
             console.error('Error saving profile:', error);
-            toast.error('Error updating profile');
+            toast.error('Error creating profile');
         } finally {
             setIsSavingProfile(false);
         }
     };
 
     const handleUseForApplication = () => {
+        if (tempApplicationData?.name?.trim() === null) {
+            toast.error("Full Name is required.");
+            setActiveTab("basic");
+            setIsSavingProfile(false);
+            return;
+        }
+
+        if (!tempApplicationData?.phone?.trim()) {
+            toast.error("Phone number is required.");
+            setActiveTab("basic");
+            setIsSavingProfile(false);
+            return;
+        }
+
+        const phoneRegex = /^[+]?[\d\s()-]{7,20}$/;
+        if (!phoneRegex.test(tempApplicationData?.phone.trim())) {
+            toast.error("Please enter a valid phone number.");
+            setActiveTab("basic");
+            setIsSavingProfile(false);
+            return;
+        }
+
+        if (!tempApplicationData?.skills?.length) {
+            toast.error("Please add at least one skill.");
+            setActiveTab("skills");
+            setIsSavingProfile(false);
+            return;
+        }
+
+        if (tempApplicationData?.experiences?.length > 0) {
+            for (const exp of tempApplicationData?.experiences) {
+                if (!exp?.jobTitle || !exp?.company || !exp?.duration) {
+                    toast.error("Please fill all required fields in Experience.");
+                    setActiveTab("experience");
+                    setIsSavingProfile(false);
+                    return;
+                }
+            }
+        }
+
+        if (tempApplicationData?.education?.length > 0) {
+            for (const edu of tempApplicationData?.education) {
+                if (!edu?.degree || !edu?.institution) {
+                    toast.error("Please fill all required fields in Education.");
+                    setActiveTab("education");
+                    setIsSavingProfile(false);
+                    return;
+                }
+            }
+        }
+
+        if (tempApplicationData?.projects?.length > 0) {
+            for (const proj of tempApplicationData?.projects) {
+                if (!proj?.title || !proj?.description) {
+                    toast.error("Please fill all required fields in Projects.");
+                    setActiveTab("projects");
+                    setIsSavingProfile(false);
+                    return;
+                }
+            }
+        }
+
         setApplicationData(tempApplicationData);
         toast.success('Profile data updated for this application!');
         setResumeScore(null);
@@ -181,8 +350,12 @@ export default function ApplyJobPage() {
     };
 
     const handleCancelEdit = () => {
-        setTempApplicationData(applicationData);
-        setIsEditModalOpen(false);
+        // Only allow cancel if profile is already complete
+        if (isProfileComplete) {
+            setTempApplicationData(applicationData);
+            setIsEditModalOpen(false);
+        }
+        // If profile is not complete, don't allow closing - user must complete profile
     };
 
     const getScoreMessage = (score) => {
@@ -194,6 +367,66 @@ export default function ApplyJobPage() {
         return 'Needs improvement 📝';
     };
 
+    const handleResumeUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return toast.error("No file selected.");
+
+        setResumeFile(file);
+        setIsUploading(true);
+
+        try {
+            const formData = new FormData();
+            formData.append("file", file);
+
+            const data = await parseResume(formData);
+
+            console.log("Resume Parse Response:", data);
+
+            if (data.success) {
+                const parsed = data.parsedData;
+
+                // Auto-fill the temporary application data from parsed resume
+                setTempApplicationData(prev => ({
+                    ...prev,
+                    name: parsed.name || prev.name,
+                    phone: parsed.phone || prev.phone,
+                    linkedin_url: parsed.linkedinUrl || prev.linkedin_url,
+                    portfolio_url: parsed.portfolioUrl || prev.portfolio_url,
+                    skills: parsed.skills || prev.skills,
+                    education: (parsed.education || []).map(edu => ({
+                        degree: edu.degree || '',
+                        institution: edu.institution || '',
+                        year: edu.year || '',
+                        grade: edu.grade || '',
+                    })) || prev.education,
+                    experiences: (parsed.experience || []).map(exp => ({
+                        jobTitle: exp.jobTitle || '',
+                        company: exp.company || '',
+                        duration: exp.duration || '',
+                        description: exp.description || '',
+                    })) || prev.experiences,
+                    projects: (parsed.projects || []).map(p => ({
+                        title: p.title || '',
+                        description: p.description || '',
+                        githubUrl: p.githubUrl || '',
+                        liveUrl: p.liveUrl || '',
+                    })) || prev.projects,
+                }));
+
+                setActiveTab("basic");
+                toast.success("Resume parsed successfully! Review and edit the auto-filled data.");
+            } else {
+                console.log("Raw Affinda Response:", data.raw);
+                toast.error(data.message || "Failed to parse resume. Please fill manually.");
+            }
+        } catch (err) {
+            console.error("Resume parsing error:", err);
+            toast.error("Error uploading resume");
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
     const generateAIScore = async () => {
         if (!job || !applicationData) {
             toast.error('Job or application data is missing.');
@@ -202,7 +435,7 @@ export default function ApplyJobPage() {
 
         setIsScoring(true);
         setResumeScore(null);
-        setAiFeedback(null); // Clear previous feedback
+        setAiFeedback(null);
 
         try {
             const payload = {
@@ -230,21 +463,20 @@ export default function ApplyJobPage() {
                 coverLetter: coverLetter,
             };
 
-            console.log(payload);
-
             const result = await scoreResume(payload);
 
             if (result.success && typeof result.score === 'number') {
                 console.log('AI Score Result:', result);
                 const roundedScore = Math.round(result.score);
+                console.log(roundedScore);
                 setResumeScore(roundedScore);
-                setAiFeedback(result); // Store the full AI feedback
+                setAiFeedback(result);
 
                 toast.success(`Score Calculated: ${roundedScore}%! ${result.message}`);
 
                 return {
                     score: roundedScore,
-                    feedback: result // Return both score and feedback
+                    feedback: result
                 };
             } else {
                 toast.error(result.message || 'Failed to generate AI score.');
@@ -272,7 +504,6 @@ export default function ApplyJobPage() {
 
         setIsSubmitting(true);
         try {
-            // Get the current score and feedback, or generate it if not already done
             let finalScore = resumeScore;
             let finalFeedback = aiFeedback;
 
@@ -286,7 +517,6 @@ export default function ApplyJobPage() {
                 finalFeedback = scoringResult.feedback;
             }
 
-            // Submit with AI feedback
             const result = await submitApplication({
                 jobId: parseInt(jobId),
                 applicantId: user.id,
@@ -305,14 +535,14 @@ export default function ApplyJobPage() {
                 },
                 coverLetter,
                 resumeScore: finalScore,
-                aiFeedback: finalFeedback // Pass AI feedback to the submission
+                aiFeedback: finalFeedback
             });
 
             if (result.success) {
                 setHasApplied(true);
                 setExistingApplication(result.application);
+                setApplicationId(result.applicationId);
                 toast.success('Application submitted successfully! 🎉');
-                router.push('/applications');
             } else {
                 toast.error(result.message || 'Failed to submit application');
             }
@@ -325,6 +555,7 @@ export default function ApplyJobPage() {
     };
 
     const tabData = [
+        { key: 'upload', label: 'Upload Resume', Icon: UploadCloud },
         { key: 'basic', label: 'Basic Info', Icon: User },
         { key: 'skills', label: 'Skills', Icon: Zap },
         { key: 'education', label: 'Education', Icon: GraduationCap },
@@ -336,10 +567,13 @@ export default function ApplyJobPage() {
         return (
             <>
                 <Navbar />
-                <div className="min-h-screen flex items-center justify-center p-4">
-                    <div className="text-center">
-                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-                        <p className="text-slate-600 font-medium">Loading application...</p>
+                <Toaster />
+                <div className="flex flex-col min-h-screen">
+                    <div className="flex-grow flex items-center justify-center p-4">
+                        <div className="text-center">
+                            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+                            <p className="text-slate-600 font-medium">Loading application...</p>
+                        </div>
                     </div>
                 </div>
                 <Footer />
@@ -347,14 +581,18 @@ export default function ApplyJobPage() {
         );
     }
 
-    if (!job || !profile) {
+    if (!job) {
         return (
             <>
                 <Navbar />
-                <div className="min-h-screen flex items-center justify-center p-4">
+                <Toaster />
+                <div className="flex items-center justify-center p-4 my-8">
                     <div className="text-center bg-red-50 border border-red-200 rounded-2xl p-8 max-w-md">
-                        <h2 className="text-2xl font-bold text-slate-900 mb-4">Application Error</h2>
-                        <p className="text-red-600 mb-6">Unable to load application data</p>
+                        <h2 className="text-2xl font-bold text-slate-900 mb-4">Job Not Found</h2>
+                        <p className="text-slate-600 mb-2">The job you are looking for does not exist.</p>
+                        <p className="text-slate-600 mb-2">It might have been removed or the link is incorrect.</p>
+                        <p className="text-slate-600 mb-6">Try browsing other jobs.</p>
+
                         <button
                             onClick={() => router.push('/jobs')}
                             className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 cursor-pointer font-medium active:scale-95"
@@ -369,7 +607,6 @@ export default function ApplyJobPage() {
     }
 
     if (hasApplied) {
-
         return (
             <>
                 <Toaster />
@@ -410,34 +647,9 @@ export default function ApplyJobPage() {
                                     Your application for <span className="font-semibold text-slate-900">{job.title}</span> at <span className="font-semibold text-slate-900">{job.company_name}</span> has been successfully submitted.
                                 </p>
 
-                                {/* {existingApplication && (
-                                    <div className="bg-slate-50 rounded-lg p-4 md:p-6 mb-8 text-left">
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                                            <div className="bg-white rounded-lg p-4">
-                                                <p className="text-xs md:text-sm text-slate-500 font-medium mb-1">Applied on</p>
-                                                <p className="font-semibold text-slate-900 text-sm md:text-base">
-                                                    {new Date(existingApplication.appliedAt).toLocaleDateString()}
-                                                </p>
-                                            </div>
-                                            <div className="bg-white rounded-lg p-4">
-                                                <p className="text-xs md:text-sm text-slate-500 font-medium mb-1">Resume Score</p>
-                                                <p className="font-semibold text-slate-900 text-sm md:text-base">{existingApplication.resumeScore}%</p>
-                                            </div>
-                                            <div className="bg-white rounded-lg p-4">
-                                                <p className="text-xs md:text-sm text-slate-500 font-medium mb-1">Status</p>
-                                                <p className="font-semibold text-slate-900 text-sm md:text-base capitalize">{existingApplication.status}</p>
-                                            </div>
-                                            <div className="bg-white rounded-lg p-4">
-                                                <p className="text-xs md:text-sm text-slate-500 font-medium mb-1">Job Type</p>
-                                                <p className="font-semibold text-slate-900 text-sm md:text-base">{job.job_type}</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )} */}
-
                                 <div className="space-y-3">
                                     <Link
-                                        href="/applications"
+                                        href={`/applications/${applicationId}`}
                                         className="flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all duration-200 cursor-pointer active:scale-95 w-full"
                                     >
                                         <FileText className="w-5 h-5" />
@@ -454,8 +666,8 @@ export default function ApplyJobPage() {
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </div>
+                    </div >
+                </div >
                 <Footer />
             </>
         );
@@ -497,7 +709,7 @@ export default function ApplyJobPage() {
                                     }`}>
                                     <p className="text-xs md:text-sm font-semibold">Resume Score</p>
                                     <p className="text-2xl md:text-3xl font-bold">
-                                        {resumeScore ? `${resumeScore}%` : '--'}
+                                        {resumeScore !== null ? `${resumeScore}%` : '--'}
                                     </p>
                                 </div>
                                 {!resumeScore && (
@@ -514,13 +726,12 @@ export default function ApplyJobPage() {
                                         ) : (
                                             <>
                                                 <Zap className="w-4 h-4" />
-                                                Get AI Score {/* Changed from "Get AI Score & Feedback" */}
+                                                Get AI Score
                                             </>
                                         )}
                                     </button>
                                 )}
                             </div>
-
                         </div>
                     </div>
 
@@ -663,7 +874,7 @@ export default function ApplyJobPage() {
                             <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl shadow-md border border-indigo-200 p-6 md:p-8 hover:shadow-lg transition-shadow duration-300">
                                 <button
                                     onClick={handleSubmitApplication}
-                                    disabled={isSubmitting || !coverLetter.trim()}
+                                    disabled={isSubmitting || !coverLetter.trim() || !isProfileComplete}
                                     className="w-full flex items-center justify-center gap-2 px-6 py-3 md:py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-semibold hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 cursor-pointer active:scale-95 text-sm md:text-base shadow-lg hover:shadow-xl"
                                 >
                                     {isSubmitting ? (
@@ -687,22 +898,34 @@ export default function ApplyJobPage() {
                 </div>
             </div>
 
-            {/* Edit Profile Modal */}
+            {/* Edit Profile Modal - Modified for forced profile completion */}
             {isEditModalOpen && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in-95">
-                        {/* Modal Header */}
+                        {/* Modal Header - Modified for forced completion */}
                         <div className="flex items-center justify-between p-4 md:p-6 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50">
-                            <h2 className="text-xl md:text-2xl font-bold text-slate-900">Customize Your Application</h2>
-                            <button
-                                onClick={handleCancelEdit}
-                                className="p-2 hover:bg-slate-200 rounded-lg transition-all duration-200 cursor-pointer"
-                            >
-                                <X className="w-5 h-5 md:w-6 md:h-6 text-slate-600" />
-                            </button>
+                            <div className="flex items-center gap-3">
+                                <h2 className="text-xl md:text-2xl font-bold text-slate-900">
+                                    {forceProfileComplete ? 'Complete Your Profile to Apply' : 'Customize Your Application'}
+                                </h2>
+                                {forceProfileComplete && (
+                                    <span className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-sm font-medium">
+                                        Required
+                                    </span>
+                                )}
+                            </div>
+                            {/* Only show close button if profile is already complete */}
+                            {!forceProfileComplete && (
+                                <button
+                                    onClick={handleCancelEdit}
+                                    className="p-2 hover:bg-slate-200 rounded-lg transition-all duration-200 cursor-pointer"
+                                >
+                                    <X className="w-5 h-5 md:w-6 md:h-6 text-slate-600" />
+                                </button>
+                            )}
                         </div>
 
-                        {/* Modal Content */}
+                        {/* Modal Content - Same as before */}
                         <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
                             {/* Sidebar Navigation */}
                             <div className="w-full md:w-1/4 bg-slate-50 border-b md:border-b-0 md:border-r border-slate-200">
@@ -725,8 +948,63 @@ export default function ApplyJobPage() {
                                 </div>
                             </div>
 
-                            {/* Form Content */}
+                            {/* Form Content - Same as before */}
                             <div className="flex-1 p-4 md:p-6 overflow-y-auto">
+
+                                {/* Upload Resume Tab */}
+                                {activeTab === 'upload' && (
+                                    <div className="space-y-6">
+                                        <h3 className="text-lg md:text-xl font-bold text-slate-900 flex items-center gap-2">
+                                            <UploadCloud className="w-5 h-5 text-indigo-600" />
+                                            Upload Resume (AI Auto-Fill)
+                                        </h3>
+
+                                        <div className="bg-indigo-50 border-2 border-dashed border-indigo-300 rounded-xl p-6 text-center">
+                                            <p className="text-xs text-indigo-500 font-semibold uppercase mb-1">Quick Start</p>
+                                            <h4 className="text-lg font-semibold text-slate-900 mb-2">Upload Your Resume</h4>
+                                            <p className="text-sm text-slate-600 mb-4">
+                                                Upload your resume (PDF, DOC, DOCX) and we'll automatically fill your profile information.
+                                            </p>
+
+                                            <input
+                                                type="file"
+                                                id="resume-upload"
+                                                accept=".pdf,.doc,.docx"
+                                                onChange={handleResumeUpload}
+                                                className="hidden"
+                                            />
+                                            <label
+                                                htmlFor="resume-upload"
+                                                className={`inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-medium transition-all cursor-pointer ${isUploading ? 'opacity-70 cursor-wait' : 'hover:bg-indigo-700'
+                                                    }`}
+                                            >
+                                                {isUploading ? (
+                                                    <>
+                                                        <Loader2 className="animate-spin h-4 w-4" />
+                                                        Parsing Resume...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <UploadCloud className="w-4 h-4" />
+                                                        Select Resume File
+                                                    </>
+                                                )}
+                                            </label>
+
+                                            {resumeFile && (
+                                                <p className="mt-3 text-sm font-medium text-slate-900">
+                                                    File selected: <span className="text-green-700">{resumeFile.name}</span>
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        <div className="p-3 bg-slate-100 rounded-lg text-slate-700 text-sm">
+                                            <p className="font-semibold">Tip:</p>
+                                            <p>After uploading, review all tabs to verify the auto-filled information.</p>
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* Basic Info Tab */}
                                 {activeTab === 'basic' && (
                                     <div className="space-y-4 md:space-y-6">
@@ -736,7 +1014,7 @@ export default function ApplyJobPage() {
                                                 <label className="block text-xs md:text-sm font-semibold text-slate-700 mb-2">Full Name *</label>
                                                 <input
                                                     type="text"
-                                                    value={tempApplicationData?.name || ''}
+                                                    value={tempApplicationData?.name || user?.name || ''}
                                                     onChange={(e) => handleFieldChange('name', e.target.value)}
                                                     className="w-full border-2 border-slate-200 rounded-lg px-3 md:px-4 py-2 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition-all text-sm"
                                                 />
@@ -777,13 +1055,22 @@ export default function ApplyJobPage() {
                                     </div>
                                 )}
 
-
-
-
                                 {/* Skills Tab */}
                                 {activeTab === 'skills' && (
                                     <div className="space-y-4 md:space-y-6">
-                                        <h3 className="text-lg md:text-xl font-bold text-slate-900">Skills</h3>
+                                        <div className='flex justify-between items-center'>
+                                            <h3 className="text-lg md:text-xl font-bold text-slate-900">Skills</h3>
+                                            {tempApplicationData?.skills?.length > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleFieldChange('skills', [])}
+                                                    className="inline-flex items-center gap-1 px-3 py-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 font-medium cursor-pointer text-sm border border-red-200 hover:border-red-300"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                    Clear All
+                                                </button>
+                                            )}
+                                        </div>
                                         <div className="space-y-4">
                                             <div className="flex gap-2">
                                                 <input
@@ -794,8 +1081,8 @@ export default function ApplyJobPage() {
                                                         if (e.key === 'Enter') {
                                                             e.preventDefault();
                                                             const skill = e.target.value.trim();
-                                                            if (skill && !tempApplicationData.skills?.includes(skill)) {
-                                                                handleFieldChange('skills', [...(tempApplicationData.skills || []), skill]);
+                                                            if (skill && !tempApplicationData?.skills?.includes(skill)) {
+                                                                handleFieldChange('skills', [...(tempApplicationData?.skills || []), skill]);
                                                                 e.target.value = '';
                                                             }
                                                         }
@@ -809,7 +1096,7 @@ export default function ApplyJobPage() {
                                                         <button
                                                             type="button"
                                                             onClick={() => {
-                                                                const newSkills = tempApplicationData.skills.filter((_, i) => i !== index);
+                                                                const newSkills = tempApplicationData?.skills.filter((_, i) => i !== index);
                                                                 handleFieldChange('skills', newSkills);
                                                             }}
                                                             className="text-indigo-500 hover:text-indigo-800 cursor-pointer"
@@ -818,7 +1105,7 @@ export default function ApplyJobPage() {
                                                         </button>
                                                     </span>
                                                 ))}
-                                                {tempApplicationData.skills.length === 0 && (
+                                                {(tempApplicationData?.skills?.length === 0 || !tempApplicationData?.skills) && (
                                                     <p className="text-sm text-slate-500 italic">No skills added yet.</p>
                                                 )}
                                             </div>
@@ -882,7 +1169,7 @@ export default function ApplyJobPage() {
                                                     </div>
                                                 </div>
                                             ))}
-                                            {tempApplicationData.education.length === 0 && (
+                                            {(tempApplicationData?.education?.length === 0 || !tempApplicationData?.education) && (
                                                 <div className="p-8 text-center text-slate-500 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl mt-4">
                                                     <p className="text-base italic">Click 'Add Degree' to list your academic qualifications.</p>
                                                 </div>
@@ -947,7 +1234,7 @@ export default function ApplyJobPage() {
                                                     </div>
                                                 </div>
                                             ))}
-                                            {tempApplicationData.experiences.length === 0 && (
+                                            {(tempApplicationData?.experiences?.length === 0 || !tempApplicationData?.experiences) && (
                                                 <div className="p-8 text-center text-slate-500 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl mt-4">
                                                     <p className="text-base italic">Click 'Add Job' to list your professional experience.</p>
                                                 </div>
@@ -1018,56 +1305,98 @@ export default function ApplyJobPage() {
                                                     </div>
                                                 </div>
                                             ))}
-                                            {tempApplicationData.projects.length === 0 && (
+                                            {tempApplicationData?.projects?.length === 0 && (
                                                 <div className="p-8 text-center text-slate-500 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl mt-4">
                                                     <p className="text-base italic">Click 'Add Project' to showcase your work.</p>
                                                 </div>
                                             )}
+                                            {!tempApplicationData?.projects && (
+                                                <div className="p-8 text-center text-slate-500 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl mt-4">
+                                                    <p className="text-base italic">Click 'Add Project' to showcase your work.</p>
+                                                </div>
+                                            )
+                                            }
                                         </div>
                                     </div>
                                 )}
                             </div>
                         </div>
 
-                        {/* Modal Footer */}
+                        {/* Modal Footer - Modified for forced completion */}
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 p-4 md:p-6 border-t border-slate-200 bg-slate-50">
-                            <p className="text-xs md:text-sm text-slate-600">
-                                <strong>Tip:</strong> Use "Apply with these changes" to customize for this job only
-                            </p>
-                            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                                <button
-                                    onClick={handleCancelEdit}
-                                    className="px-4 md:px-6 py-2 md:py-3 border-2 border-slate-300 text-slate-700 rounded-lg hover:bg-slate-100 hover:border-slate-400 transition-all duration-200 font-medium cursor-pointer text-sm active:scale-95"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleSaveProfile}
-                                    disabled={isSavingProfile}
-                                    className="flex items-center justify-center cursor-pointer gap-2 px-4 md:px-6 py-2 md:py-3 bg-slate-600 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 font-medium text-sm active:scale-95"
-                                >
-                                    {isSavingProfile ? (
-                                        <>
-                                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                                            Saving...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Save className="w-4 h-4" />
-                                            <span className="hidden sm:inline">Save to Profile</span>
-                                            <span className="sm:hidden">Save</span>
-                                        </>
-                                    )}
-                                </button>
-                                <button
-                                    onClick={handleUseForApplication}
-                                    className="flex items-center justify-center gap-2 px-4 md:px-6 py-2 md:py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium cursor-pointer text-sm active:scale-95"
-                                >
-                                    <Target className="w-4 h-4" />
-                                    <span className="hidden sm:inline">Apply with These</span>
-                                    <span className="sm:hidden">Apply</span>
-                                </button>
-                            </div>
+                            {!forceProfileComplete ? (
+                                <>
+                                    <p className="text-xs md:text-sm text-slate-600">
+                                        <strong>Tip:</strong> Use "Upload Resume" tab for quick auto-fill, then customize for this job
+                                    </p>
+                                    <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                                        <button
+                                            onClick={handleCancelEdit}
+                                            className="px-4 md:px-6 py-2 md:py-3 border-2 border-slate-300 text-slate-700 rounded-lg hover:bg-slate-100 hover:border-slate-400 transition-all duration-200 font-medium cursor-pointer text-sm active:scale-95"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={handleSaveProfile}
+                                            disabled={isSavingProfile}
+                                            className="flex items-center justify-center cursor-pointer gap-2 px-4 md:px-6 py-2 md:py-3 bg-slate-600 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 font-medium text-sm active:scale-95"
+                                        >
+                                            {isSavingProfile ? (
+                                                <>
+                                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                                    Saving...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Save className="w-4 h-4" />
+                                                    <span className="hidden sm:inline">Save to Profile</span>
+                                                    <span className="sm:hidden">Save</span>
+                                                </>
+                                            )}
+                                        </button>
+                                        <button
+                                            onClick={handleUseForApplication}
+                                            className="flex items-center justify-center gap-2 px-4 md:px-6 py-2 md:py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium cursor-pointer text-sm active:scale-95"
+                                        >
+                                            <Target className="w-4 h-4" />
+                                            <span className="hidden sm:inline">Apply with These</span>
+                                            <span className="sm:hidden">Apply</span>
+                                        </button>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="flex items-center gap-2 text-amber-700">
+                                        <AlertCircle className="w-5 h-5" />
+                                        <p className="text-sm font-medium">Complete your profile to continue with your application</p>
+                                    </div>
+                                    <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                                        <button
+                                            onClick={() => router.push('/jobs')}
+                                            className="px-4 md:px-6 py-2 md:py-3 border-2 border-slate-300 text-slate-700 rounded-lg hover:bg-slate-100 hover:border-slate-400 transition-all duration-200 font-medium cursor-pointer text-sm active:scale-95"
+                                        >
+                                            Browse Other Jobs
+                                        </button>
+                                        <button
+                                            onClick={handleSaveProfile}
+                                            disabled={isSavingProfile}
+                                            className="flex items-center justify-center cursor-pointer gap-2 px-4 md:px-6 py-2 md:py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 font-medium text-sm active:scale-95"
+                                        >
+                                            {isSavingProfile ? (
+                                                <>
+                                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                                    Creating Profile...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Save className="w-4 h-4" />
+                                                    Save Profile & Continue
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>

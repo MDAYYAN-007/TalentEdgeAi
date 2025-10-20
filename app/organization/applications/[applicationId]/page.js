@@ -1309,21 +1309,21 @@ export default function RecruiterApplicationDetailsPage() {
                                             <>
                                                 <button
                                                     onClick={() => handleRescheduleTest(test)}
-                                                    className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                    className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
                                                 >
                                                     <RefreshCw className="w-4 h-4" />
                                                     Reschedule
                                                 </button>
                                                 <button
                                                     onClick={() => handleViewTestDetails(test)}
-                                                    className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                    className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
                                                 >
                                                     <Eye className="w-4 h-4" />
                                                     View Details
                                                 </button>
                                                 <button
                                                     onClick={() => handleSendReminder(test)}
-                                                    className="flex items-center justify-center gap-2 px-4 py-3 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                    className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
                                                 >
                                                     <Send className="w-4 h-4" />
                                                     Send Reminder
@@ -1334,14 +1334,14 @@ export default function RecruiterApplicationDetailsPage() {
                                             <>
                                                 <button
                                                     onClick={() => handleViewTestResults(test)}
-                                                    className="flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                    className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
                                                 >
                                                     <FileCheck className="w-4 h-4" />
                                                     View Results
                                                 </button>
                                                 <button
                                                     onClick={() => handleDownloadReport(test)}
-                                                    className="flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                    className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
                                                 >
                                                     <Download className="w-4 h-4" />
                                                     Download Report
@@ -1352,14 +1352,14 @@ export default function RecruiterApplicationDetailsPage() {
                                             <>
                                                 <button
                                                     onClick={() => handleRescheduleTest(test)}
-                                                    className="flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                    className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
                                                 >
                                                     <RefreshCw className="w-4 h-4" />
                                                     Reassign Test
                                                 </button>
                                                 <button
                                                     onClick={() => handleViewTestDetails(test)}
-                                                    className="flex items-center justify-center gap-2 px-4 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                    className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
                                                 >
                                                     <Eye className="w-4 h-4" />
                                                     View History
@@ -1370,7 +1370,7 @@ export default function RecruiterApplicationDetailsPage() {
                                         {/* Common Actions */}
                                         <button
                                             onClick={() => handleContactCandidate(test)}
-                                            className="flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                            className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
                                         >
                                             <Mail className="w-4 h-4" />
                                             Contact Candidate
@@ -1675,6 +1675,7 @@ export default function RecruiterApplicationDetailsPage() {
                 onConfirmReschedule={handleConfirmInterviewReschedule}
                 isRescheduling={isRescheduling}
                 formatDateTime={formatDateTime}
+                interviewTypes={interviewTypes}
             />
 
             <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
@@ -2786,7 +2787,6 @@ const AssignTestModal = ({
     );
 };
 
-// Move this outside, before the main component's return
 const InterviewModal = ({
     isOpen,
     onClose,
@@ -2871,7 +2871,7 @@ const InterviewModal = ({
                     {/* Date & Time */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                            <label className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
                                 <Calendar className="w-4 h-4" />
                                 Interview Date & Time *
                             </label>
@@ -2886,7 +2886,7 @@ const InterviewModal = ({
                         </div>
 
                         <div>
-                            <label className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                            <label className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
                                 <Clock className="w-4 h-4" />
                                 Duration (minutes) *
                             </label>
@@ -2924,7 +2924,7 @@ const InterviewModal = ({
                         </div>
 
                         <div>
-                            <label className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                            <label className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
                                 <Video className="w-4 h-4" />
                                 Meeting Platform *
                             </label>
@@ -2945,7 +2945,7 @@ const InterviewModal = ({
                     {/* Meeting Details */}
                     {interviewFormData.meetingPlatform === 'in_person' ? (
                         <div>
-                            <label className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                            <label className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
                                 <MapPin className="w-4 h-4" />
                                 Meeting Location *
                             </label>
@@ -2960,7 +2960,7 @@ const InterviewModal = ({
                         </div>
                     ) : interviewFormData.meetingPlatform !== 'phone' ? (
                         <div>
-                            <label className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                            <label className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
                                 <Video className="w-4 h-4" />
                                 Meeting Link *
                             </label>
@@ -2977,7 +2977,7 @@ const InterviewModal = ({
 
                     {/* Interviewers Selection */}
                     <div>
-                        <label className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <label className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
                             <Users className="w-4 h-4" />
                             Select Interviewers *
                         </label>
@@ -3065,7 +3065,7 @@ const InterviewModal = ({
 
                     {/* Notes */}
                     <div>
-                        <label className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <label className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
                             <FileText className="w-4 h-4" />
                             Additional Notes
                         </label>
@@ -3338,7 +3338,8 @@ const RescheduleInterviewModal = ({
     onRescheduleDataChange,
     onConfirmReschedule,
     isRescheduling,
-    formatDateTime
+    formatDateTime,
+    interviewTypes
 }) => {
     if (!isOpen || !interview) return null;
 
@@ -3399,7 +3400,7 @@ const RescheduleInterviewModal = ({
                     {/* New Interview Date & Time */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                            <label className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
                                 <Calendar className="w-4 h-4" />
                                 New Date & Time *
                             </label>
@@ -3414,7 +3415,7 @@ const RescheduleInterviewModal = ({
                         </div>
 
                         <div>
-                            <label className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                            <label className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
                                 <Clock className="w-4 h-4" />
                                 Duration (minutes) *
                             </label>
@@ -3434,7 +3435,7 @@ const RescheduleInterviewModal = ({
 
                     {/* Reschedule Notes */}
                     <div>
-                        <label className="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <label className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
                             <FileText className="w-4 h-4" />
                             Reschedule Notes (Optional)
                         </label>
