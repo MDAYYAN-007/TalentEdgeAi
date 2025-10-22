@@ -3,12 +3,12 @@
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { verifyOTP } from '@/actions/auth/verify';
 import { resendOTP } from '@/actions/auth/resend-otp';
 
 export default function VerifyPage() {
-  const searchParams = useParams();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const emailFromQuery = searchParams.get('email') || '';
 
