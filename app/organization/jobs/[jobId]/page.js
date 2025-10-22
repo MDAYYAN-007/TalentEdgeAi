@@ -7,7 +7,7 @@ import toast, { Toaster } from 'react-hot-toast';
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
-import { ArrowLeft, Building2, Briefcase, MapPin, Users, Check, FileText, XCircle, Eye } from 'lucide-react';
+import { ArrowLeft, Building2, Briefcase, MapPin, Users, Check, FileText, XCircle, Eye, Loader2 } from 'lucide-react';
 import { getJobDetails } from '@/actions/jobs/getJobDetails';
 import { updateJobStatus } from '@/actions/jobs/updateJobStatus';
 import { getRecruiters } from '@/actions/jobs/getRecruiters';

@@ -8,7 +8,7 @@ import {
     CheckCircle, XCircle, Clock, FileText, Zap, Video,
     Mail, AlertCircle, Briefcase, GraduationCap, DollarSign,
     Users, Target, BookOpen, Award, Clock4, Download,
-    Send, Eye, EyeOff, Play, FileCheck, RefreshCw, X
+    Send, Eye, EyeOff, Play, FileCheck, RefreshCw, X,Phone
 } from 'lucide-react';
 import { getRecruiterApplicationDetails } from '@/actions/applications/getRecruiterApplicationDetails';
 import { updateApplicationStatus } from '@/actions/applications/updateApplicationStatus';
