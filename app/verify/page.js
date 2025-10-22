@@ -4,12 +4,12 @@ export const dynamic = 'force-dynamic';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { useState, useEffect } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { verifyOTP } from '@/actions/auth/verify';
 import { resendOTP } from '@/actions/auth/resend-otp';
 
 export default function VerifyPage() {
-  const searchParams = useSearchParams();
+  const searchParams = useParams();
   const router = useRouter();
   const emailFromQuery = searchParams.get('email') || '';
 
