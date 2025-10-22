@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { jwtDecode } from 'jwt-decode';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { getApplicationDetails } from '@/actions/applications/getApplicationDetails';
@@ -15,10 +14,13 @@ import {
     TrendingUp, Star, Zap, Target, Award, Briefcase,
     GraduationCap, BookOpen, Phone, Mail, Globe, Linkedin,
     Download, Share, Eye, Sparkles, Video, Play, FileCheck,
-    Users, ExternalLink, Mail as MailIcon
+    Users, ExternalLink, Mail as MailIcon, X
 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import Link from 'next/link';
+import { getTestResults } from '@/actions/tests/getTestResults';
+import { getTestAttemptId } from '@/actions/tests/getTestAttemptId';
+import { getCurrentUser } from '@/actions/auth/auth-utils';
 
 export default function ApplicationDetailsPage() {
     const params = useParams();
@@ -34,23 +36,33 @@ export default function ApplicationDetailsPage() {
     const [interviews, setInterviews] = useState([]);
     const [isLoadingTests, setIsLoadingTests] = useState(false);
     const [isLoadingInterviews, setIsLoadingInterviews] = useState(false);
+    const [isResultModalOpen, setIsResultModalOpen] = useState(false);
+    const [selectedTestAssignment, setSelectedTestAssignment] = useState(null);
+    const [detailedTestResult, setDetailedTestResult] = useState(null);
+    const [isLoadingResult, setIsLoadingResult] = useState(false);
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        if (!token) {
-            toast.error('Please sign in to view application details');
-            router.push('/signin');
-            return;
-        }
+        const fetchUserAndApplication = async () => {
+            try {
+                const currentUser = await getCurrentUser();
 
-        try {
-            const decoded = jwtDecode(token);
-            setUser(decoded);
-            fetchApplicationDetails(applicationId, decoded.id);
-        } catch (error) {
-            console.error('Error decoding token:', error);
-            router.push('/signin');
-        }
+                if (!currentUser) {
+                    toast.error('Please sign in to view application details');
+                    router.push('/signin');
+                    return;
+                }
+
+                setUser(currentUser);
+                await fetchApplicationDetails(applicationId, currentUser.id);
+            } catch (error) {
+                console.error('Error fetching user:', error);
+                toast.error('Please sign in to view application details');
+                router.push('/signin');
+            }
+        };
+
+        fetchUserAndApplication();
     }, [applicationId, router]);
 
     const fetchApplicationDetails = async (appId, userId) => {
@@ -58,7 +70,7 @@ export default function ApplicationDetailsPage() {
             const result = await getApplicationDetails(appId, userId);
             if (result.success) {
                 setApplication(result.application);
-                // Fetch additional data
+
                 await Promise.all([
                     fetchStatusHistory(appId),
                     fetchTestAssignments(appId),
@@ -93,6 +105,7 @@ export default function ApplicationDetailsPage() {
         try {
             const result = await getTestsForApplication(appId);
             if (result.success) {
+                console.log(result)
                 setTestAssignments(result.tests || []);
             }
         } catch (error) {
@@ -236,12 +249,43 @@ export default function ApplicationDetailsPage() {
     const handleTakeTest = (testAssignment) => {
         console.log('Taking test:', testAssignment);
         router.push(`/tests/${testAssignment.id}`);
-
     };
 
-    const handleViewTestResults = (testAssignment) => {
-        console.log('Viewing test results:', testAssignment);
-        toast.success('Test results view functionality will be implemented soon');
+    // Update the handleViewTestResults function
+    const handleViewTestResults = async (testAssignment) => {
+        setSelectedTestAssignment(testAssignment);
+        setIsLoadingResult(true);
+        setIsResultModalOpen(true);
+
+        try {
+            // First get the attempt ID
+            const attemptResult = await getTestAttemptId(testAssignment.test_id, applicationId);
+            console.log('Attempt result:', attemptResult);
+
+            if (attemptResult.success && attemptResult.attempt) {
+                console.log('Found attempt ID:', attemptResult.attempt.id);
+
+                // Then get detailed results using the attempt ID
+                const result = await getTestResults(attemptResult.attempt.id, user.id);
+                console.log('Detailed result:', result);
+
+                if (result.success) {
+                    setDetailedTestResult(result.data);
+                } else {
+                    toast.error(result.message || 'Failed to load test results');
+                    setDetailedTestResult(null);
+                }
+            } else {
+                toast.error(attemptResult.message || 'No test attempt found');
+                setDetailedTestResult(null);
+            }
+        } catch (error) {
+            console.error('Error fetching test results:', error);
+            toast.error('Error loading test results');
+            setDetailedTestResult(null);
+        } finally {
+            setIsLoadingResult(false);
+        }
     };
 
     const handleJoinInterview = (interview) => {
@@ -314,9 +358,9 @@ export default function ApplicationDetailsPage() {
                                             </div>
                                         </div>
                                         <div className="bg-white rounded-lg p-3 border border-gray-200">
-                                            <div className="text-sm text-gray-600 font-medium">Passing Marks</div>
+                                            <div className="text-sm text-gray-600 font-medium">Passing Percentage</div>
                                             <div className="text-lg font-semibold text-gray-900">
-                                                {test.passing_marks}
+                                                {test.passing_percentage}
                                             </div>
                                         </div>
                                         <div className="bg-white rounded-lg p-3 border border-gray-200">
@@ -409,7 +453,7 @@ export default function ApplicationDetailsPage() {
                                     {test.status === 'attempted' && (
                                         <button
                                             onClick={() => handleViewTestResults(test)}
-                                            className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                            className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
                                         >
                                             <FileCheck className="w-4 h-4" />
                                             View Results
@@ -593,6 +637,47 @@ export default function ApplicationDetailsPage() {
         );
     };
 
+    const UnauthenticatedComponent = () => (
+        <>
+            <Navbar />
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50">
+                <div className="max-w-md w-full">
+                    <div className="relative">
+                        <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl blur-2xl opacity-20"></div>
+                        <div className="relative bg-white/80 backdrop-blur-xl p-8 sm:p-10 rounded-3xl shadow-2xl border border-white/20 text-center space-y-6">
+                            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg">
+                                <FileText className="w-10 h-10 text-white" />
+                            </div>
+                            <div>
+                                <h1 className="text-3xl font-bold text-slate-900 mb-2">
+                                    Authentication Required
+                                </h1>
+                                <p className="text-slate-600">
+                                    You need to be signed in to view application details.
+                                </p>
+                            </div>
+                            <div className="flex flex-col gap-3">
+                                <button
+                                    onClick={() => router.push('/signin')}
+                                    className="w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all"
+                                >
+                                    Sign In
+                                </button>
+                                <button
+                                    onClick={() => router.push('/')}
+                                    className="w-full px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-all"
+                                >
+                                    Go Home
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <Footer />
+        </>
+    );
+
     const StatusHistorySection = () => {
         if (statusHistory.length === 0) {
             return null;
@@ -658,15 +743,27 @@ export default function ApplicationDetailsPage() {
         return (
             <>
                 <Navbar />
-                <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
+                <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50 flex items-center justify-center p-8">
                     <div className="text-center">
-                        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-                        <p className="text-gray-600 text-lg">Loading application details...</p>
+                        <div className="w-16 h-16 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500 rounded-lg mx-auto mb-6 flex items-center justify-center">
+                            <FileText className="w-8 h-8 text-white" />
+                        </div>
+                        <h3 className="text-xl font-semibold text-slate-800 mb-2">
+                            Loading Application Details
+                        </h3>
+                        <p className="text-slate-600 mb-6">
+                            Fetching your application information...
+                        </p>
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
                     </div>
                 </div>
                 <Footer />
             </>
         );
+    }
+
+    if (!user && !isLoading) {
+        return <UnauthenticatedComponent />;
     }
 
     if (!application) {
@@ -770,8 +867,45 @@ export default function ApplicationDetailsPage() {
 
                 {/* Main Content */}
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                    {/* Navigation Tabs */}
-                    <div className="bg-white rounded-2xl border border-gray-200 p-2 mb-8 shadow-lg">
+                    {/* Mobile Tab Selector */}
+                    <div className="md:hidden mb-6">
+                        <button
+                            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                            className="cursor-pointer w-full flex items-center justify-between p-4 bg-white rounded-xl border border-gray-200 shadow-lg"
+                        >
+                            <span className="font-semibold text-gray-700">
+                                {tabs.find(tab => tab.id === activeTab)?.label}
+                            </span>
+                            {isMobileMenuOpen ? <Eye className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                        </button>
+
+                        {isMobileMenuOpen && (
+                            <div className="mt-2 bg-white rounded-xl border border-gray-200 shadow-lg overflow-hidden">
+                                {tabs.map((tab) => {
+                                    const IconComponent = tab.icon;
+                                    return (
+                                        <button
+                                            key={tab.id}
+                                            onClick={() => {
+                                                setActiveTab(tab.id);
+                                                setIsMobileMenuOpen(false);
+                                            }}
+                                            className={`w-full cursor-pointer flex items-center gap-3 px-4 py-3 text-left transition-all duration-200 ${activeTab === tab.id
+                                                ? 'bg-indigo-50 text-indigo-700 border-r-4 border-indigo-600'
+                                                : 'text-gray-600 hover:bg-gray-50'
+                                                }`}
+                                        >
+                                            <IconComponent className="w-5 h-5" />
+                                            <span className="font-medium">{tab.label}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Desktop Navigation Tabs */}
+                    <div className="hidden md:block bg-white rounded-2xl border border-gray-200 p-2 mb-8 shadow-lg">
                         <div className="flex gap-2">
                             {tabs.map((tab) => {
                                 const IconComponent = tab.icon;
@@ -779,7 +913,7 @@ export default function ApplicationDetailsPage() {
                                     <button
                                         key={tab.id}
                                         onClick={() => setActiveTab(tab.id)}
-                                        className={`cursor-pointer flex items-center gap-3 px-6 py-4 rounded-xl font-semibold transition-all duration-300 ${activeTab === tab.id
+                                        className={`cursor-pointer flex items-center gap-3 px-6 py-3 rounded-xl font-semibold transition-all duration-300 whitespace-nowrap overflow-y-hidden ${activeTab === tab.id
                                             ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg transform scale-105'
                                             : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                                             }`}
@@ -795,7 +929,7 @@ export default function ApplicationDetailsPage() {
                     {/* Tab Content */}
                     <div className="bg-white rounded-2xl border border-gray-200 shadow-lg overflow-hidden">
                         {activeTab === 'overview' && (
-                            <div className="p-6 lg:p-8 space-y-8">
+                            <div className="p-4 lg:p-8 space-y-8">
                                 <div>
                                     <h2 className="text-2xl lg:text-3xl font-bold text-gray-900 mb-6">Application Summary</h2>
 
@@ -864,7 +998,7 @@ export default function ApplicationDetailsPage() {
                         )}
 
                         {activeTab === 'actions' && (
-                            <div className="p-6 lg:p-8">
+                            <div className="p-4 lg:p-8">
                                 <div className="mb-8">
                                     <h2 className="text-2xl lg:text-3xl font-bold text-gray-900 mb-4">Application Status & Actions</h2>
                                     <p className="text-gray-600 text-lg">
@@ -886,7 +1020,7 @@ export default function ApplicationDetailsPage() {
                         )}
 
                         {activeTab === 'ai-analysis' && application.aiFeedback && (
-                            <div className="p-6 lg:p-8 space-y-8">
+                            <div className="p-4 lg:p-8 space-y-8">
                                 <h2 className="text-2xl lg:text-3xl font-bold text-gray-900 mb-6">AI Resume Analysis</h2>
 
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
@@ -956,7 +1090,7 @@ export default function ApplicationDetailsPage() {
                         )}
 
                         {activeTab === 'application' && (
-                            <div className="p-6 lg:p-8 space-y-8">
+                            <div className="p-4 lg:p-8 space-y-8">
                                 <h2 className="text-2xl lg:text-3xl font-bold text-gray-900 mb-6">Complete Application Details</h2>
 
                                 <div>
@@ -1098,6 +1232,301 @@ export default function ApplicationDetailsPage() {
                 </div>
             </div>
             <Footer />
+
+            {/* Result Modal */}
+            <ResultModal
+                isOpen={isResultModalOpen}
+                onClose={() => {
+                    setIsResultModalOpen(false);
+                    setSelectedTestAssignment(null);
+                    setDetailedTestResult(null);
+                }}
+                testAssignment={selectedTestAssignment}
+                detailedResult={detailedTestResult}
+                isLoading={isLoadingResult}
+                formatDateTime={formatDateTime}
+            />
         </>
     );
 }
+
+const ResultModal = ({ isOpen, onClose, testAssignment, detailedResult, isLoading, formatDateTime }) => {
+    if (!isOpen || !testAssignment) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-lg flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+                {/* Header */}
+                <div className="p-6 border-b border-gray-200 flex-shrink-0">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-green-100 rounded-lg">
+                                <FileCheck className="w-6 h-6 text-green-600" />
+                            </div>
+                            <div>
+                                <h3 className="text-xl font-bold text-gray-900">Test Results</h3>
+                                <p className="text-gray-600 text-sm mt-1">
+                                    {testAssignment.test_title}
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={onClose}
+                            className="cursor-pointer p-2 text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                            <X className="w-6 h-6" />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                    {isLoading ? (
+                        <div className="text-center py-8">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+                            <p className="text-gray-600">Loading detailed results...</p>
+                        </div>
+                    ) : (
+                        <>
+                            {/* Score Overview */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 text-center border border-blue-200">
+                                    <div className="text-2xl font-bold text-blue-600 mb-1">
+                                        {detailedResult.attempt.percentage || 0}%
+                                    </div>
+                                    <div className="text-sm text-blue-700 font-medium">Percentage</div>
+                                </div>
+                                <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4 text-center border border-green-200">
+                                    <div className="text-2xl font-bold text-green-600 mb-1">
+                                        {testAssignment.passing_percentage}%
+                                    </div>
+                                    <div className="text-sm text-green-700 font-medium">Passing Percentage</div>
+                                </div>
+                                <div className={`rounded-xl p-4 text-center border ${(detailedResult.attempt.percentage || 0) >= testAssignment.passing_percentage
+                                    ? 'bg-gradient-to-br from-green-50 to-emerald-50 border-green-200'
+                                    : 'bg-gradient-to-br from-red-50 to-pink-50 border-red-200'
+                                    }`}>
+                                    <div className={`text-2xl font-bold mb-1 ${(detailedResult.attempt.percentage || 0) >= testAssignment.passing_percentage ? 'text-green-600' : 'text-red-600'
+                                        }`}>
+                                        {(detailedResult.attempt.percentage || 0) >= testAssignment.passing_percentage ? 'PASSED' : 'FAILED'}
+                                    </div>
+                                    <div className={`text-sm font-medium ${(detailedResult.attempt.percentage || 0) >= testAssignment.passing_percentage ? 'text-green-700' : 'text-red-700'
+                                        }`}>
+                                        Result
+                                    </div>
+                                </div>
+
+                            </div>
+
+                            {/* Performance Summary */}
+                            {detailedResult && (
+                                <div className="grid grid-cols-3 gap-4">
+                                    <div className="bg-white rounded-lg p-4 border border-gray-200 text-center">
+                                        <div className="text-lg font-bold text-gray-900 mb-1">
+                                            {detailedResult.summary.correct_answers || 0}
+                                        </div>
+                                        <div className="text-sm text-gray-600">Correct Answers</div>
+                                    </div>
+                                    <div className="bg-white rounded-lg p-4 border border-gray-200 text-center">
+                                        <div className="text-lg font-bold text-gray-900 mb-1">
+                                            {detailedResult.summary.incorrect_answers || 0}
+                                        </div>
+                                        <div className="text-sm text-gray-600">Incorrect Answers</div>
+                                    </div>
+                                    <div className="bg-white rounded-lg p-4 border border-gray-200 text-center">
+                                        <div className="text-lg font-bold text-gray-900 mb-1">
+                                            {detailedResult.summary.partial_marks || 0}
+                                        </div>
+                                        <div className="text-sm text-gray-600">Skipped Questions</div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Test Details */}
+                            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                <h4 className="font-semibold text-gray-900 mb-3">Test Details</h4>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                    <div>
+                                        <span className="text-gray-600">Duration:</span>
+                                        <span className="font-semibold ml-2">{testAssignment.duration_minutes} mins</span>
+                                    </div>
+                                    <div>
+                                        <span className="text-gray-600">Total Marks:</span>
+                                        <span className="font-semibold ml-2">{testAssignment.total_marks}</span>
+                                    </div>
+                                    <div>
+                                        <span className="text-gray-600">Test Type:</span>
+                                        <span className="font-semibold ml-2">
+                                            {testAssignment.is_proctored ? 'Proctored' : 'Regular'}
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <span className="text-gray-600">Status:</span>
+                                        <span className="font-semibold ml-2 capitalize">{testAssignment.status}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Performance Analysis */}
+                            <div>
+                                <h4 className="font-semibold text-gray-900 mb-3">Performance Analysis</h4>
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-gray-600">Your Score</span>
+                                        <span className="font-semibold text-gray-900">{detailedResult.attempt.percentage || 0}%</span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-gray-600">Passing Requirement</span>
+                                        <span className="font-semibold text-gray-900">{testAssignment.passing_percentage}%</span>
+                                    </div>
+                                    <div className="w-full bg-gray-200 rounded-full h-2">
+                                        <div
+                                            className={`h-2 rounded-full ${(detailedResult.attempt.percentage || 0) >= testAssignment.passing_percentage ? 'bg-green-500' : 'bg-red-500'
+                                                }`}
+                                            style={{ width: `${Math.min(detailedResult.attempt.percentage || 0, 100)}%` }}
+                                        ></div>
+                                    </div>
+                                    <div className="flex justify-between text-xs text-gray-500">
+                                        <span>0%</span>
+                                        <span>{testAssignment.passing_percentage}% (Passing)</span>
+                                        <span>100%</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Question-wise Breakdown */}
+                            {detailedResult && detailedResult.questionResults && detailedResult.questionResults.length > 0 && (
+                                <div>
+                                    <h4 className="font-semibold text-gray-900 mb-3">Question-wise Breakdown</h4>
+                                    <div className="space-y-3 max-h-60 overflow-y-auto">
+                                        {detailedResult.questionResults.map((question, index) => (
+                                            <div key={index} className={`p-3 rounded-lg border ${question.isCorrect
+                                                ? 'bg-green-50 border-green-200'
+                                                : 'bg-red-50 border-red-200'
+                                                }`}>
+                                                <div className="flex items-start justify-between">
+                                                    <div className="flex-1">
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <span className="font-semibold text-gray-900">Q{index + 1}:</span>
+                                                            <span className="text-sm text-gray-700 line-clamp-2">{question.questionText}</span>
+                                                        </div>
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                                                            <div>
+                                                                <span className="text-gray-600">Your Answer:</span>
+                                                                <span className="font-medium ml-1">{question.userAnswer || 'Not attempted'}</span>
+                                                            </div>
+                                                            <div>
+                                                                <span className="text-gray-600">Correct Answer:</span>
+                                                                <span className="font-medium ml-1">{question.correctAnswer}</span>
+                                                            </div>
+                                                            <div>
+                                                                <span className="text-gray-600">Marks:</span>
+                                                                <span className="font-medium ml-1">{question.marksObtained}/{question.totalMarks}</span>
+                                                            </div>
+                                                            {question.timeSpent && (
+                                                                <div>
+                                                                    <span className="text-gray-600">Time Spent:</span>
+                                                                    <span className="font-medium ml-1">{question.timeSpent}</span>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center ${question.isCorrect ? 'bg-green-500' : 'bg-red-500'
+                                                        }`}>
+                                                        {question.isCorrect ? (
+                                                            <CheckCircle className="w-4 h-4 text-white" />
+                                                        ) : (
+                                                            <XCircle className="w-4 h-4 text-white" />
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Additional Information */}
+                            {testAssignment.feedback && (
+                                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                                    <h4 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                                        <FileText className="w-4 h-4" />
+                                        Evaluator Feedback
+                                    </h4>
+                                    <p className="text-blue-800 text-sm">{testAssignment.feedback}</p>
+                                </div>
+                            )}
+
+                            {/* Proctoring Information */}
+                            {testAssignment.is_proctored && (
+                                <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+                                    <h4 className="font-semibold text-amber-900 mb-2 flex items-center gap-2">
+                                        <Eye className="w-4 h-4" />
+                                        Proctored Test Information
+                                    </h4>
+                                    <div className="text-amber-800 text-sm space-y-1">
+                                        <p>This test was monitored with proctoring features:</p>
+                                        {testAssignment.proctoring_settings && (
+                                            <ul className="list-disc list-inside ml-2">
+                                                {testAssignment.proctoring_settings.fullscreen_required && (
+                                                    <li>Fullscreen mode was required</li>
+                                                )}
+                                                {testAssignment.proctoring_settings.copy_paste_prevention && (
+                                                    <li>Copy-paste was disabled</li>
+                                                )}
+                                                {testAssignment.proctoring_settings.tab_switching_detection && (
+                                                    <li>Tab switching was monitored</li>
+                                                )}
+                                            </ul>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Test Timeline */}
+                            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                                <h4 className="font-semibold text-gray-900 mb-3">Test Timeline</h4>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                                    <div>
+                                        <span className="text-gray-600">Assigned:</span>
+                                        <span className="font-semibold ml-2">{formatDateTime(testAssignment.assigned_at)}</span>
+                                    </div>
+                                    {testAssignment.attempted_at && (
+                                        <div>
+                                            <span className="text-gray-600">Attempted:</span>
+                                            <span className="font-semibold ml-2">{formatDateTime(testAssignment.attempted_at)}</span>
+                                        </div>
+                                    )}
+                                    {testAssignment.completed_at && (
+                                        <div>
+                                            <span className="text-gray-600">Completed:</span>
+                                            <span className="font-semibold ml-2">{formatDateTime(testAssignment.completed_at)}</span>
+                                        </div>
+                                    )}
+                                    {testAssignment.evaluated_at && (
+                                        <div>
+                                            <span className="text-gray-600">Evaluated:</span>
+                                            <span className="font-semibold ml-2">{formatDateTime(testAssignment.evaluated_at)}</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
+
+                {/* Footer */}
+                <div className="p-6 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+                    <div className="flex justify-end">
+                        <button
+                            onClick={onClose}
+                            className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all duration-200"
+                        >
+                            Close Results
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};

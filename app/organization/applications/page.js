@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { jwtDecode } from 'jwt-decode';
+import { getCurrentUser } from '@/actions/auth/auth-utils';
 import {
     Search, Calendar, MapPin,
     Building, User, Star, Eye,
-    X, Loader2
+    X, Loader2,
+    ArrowLeft
 } from 'lucide-react';
 import { getRecruiterApplications } from '@/actions/applications/getRecruiterApplications';
 import Link from 'next/link';
@@ -27,8 +28,6 @@ export default function RecruiterApplicationsPage() {
         sortOrder: 'desc'
     });
 
-    // Status options
-    // Status options
     const statusOptions = [
         { value: 'all', label: 'All Status' },
         { value: 'submitted', label: 'Submitted' },
@@ -40,7 +39,6 @@ export default function RecruiterApplicationsPage() {
         { value: 'rejected', label: 'Rejected' }
     ];
 
-    // Sort options
     const sortOptions = [
         { value: 'applied_at-desc', label: 'Newest First' },
         { value: 'applied_at-asc', label: 'Oldest First' },
@@ -49,48 +47,41 @@ export default function RecruiterApplicationsPage() {
         { value: 'updated_at-desc', label: 'Recently Updated' },
     ];
 
-    // JWT decoding and authentication
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        if (!token) {
-            router.push('/signin');
-            return;
-        }
+        const fetchUserAndCheckAuth = async () => {
+            try {
+                const currentUser = await getCurrentUser();
 
-        try {
-            const decoded = jwtDecode(token);
-            const userData = {
-                name: decoded.name || 'User',
-                email: decoded.email,
-                role: decoded.role || 'User',
-                id: decoded.id,
-                orgId: decoded.orgId
-            };
-            setUser(userData);
-
-            // Redirect non-recruiter users
-            if (decoded.role && !['HR', 'SeniorHR', 'OrgAdmin'].includes(decoded.role)) {
-                switch (decoded.role) {
-                    case 'User':
-                        router.push('/jobs');
-                        return;
-                    case 'Employee':
-                        router.push('/employee/dashboard');
-                        return;
-                    default:
-                        router.push('/dashboard');
-                        return;
+                if (!currentUser) {
+                    setIsLoading(false);
+                    return;
                 }
-            }
 
-        } catch (err) {
-            console.error('Invalid token', err);
-            localStorage.removeItem('token');
-            router.push('/signin');
-        }
+                setUser(currentUser);
+
+                if (currentUser.role && !['HR', 'SeniorHR', 'OrgAdmin'].includes(currentUser.role)) {
+                    switch (currentUser.role) {
+                        case 'User':
+                            router.push('/jobs');
+                            return;
+                        case 'Employee':
+                            // router.push('/employee/dashboard');
+                            return;
+                        default:
+                            router.push('/dashboard');
+                            return;
+                    }
+                }
+
+            } catch (error) {
+                console.error('Error getting current user:', error);
+                setIsLoading(false);
+            }
+        };
+
+        fetchUserAndCheckAuth();
     }, [router]);
 
-    // Fetch applications
     const fetchApplications = useCallback(async () => {
         if (!user) return;
 
@@ -121,7 +112,6 @@ export default function RecruiterApplicationsPage() {
         }
     }, [user, fetchApplications]);
 
-    // Get unique jobs for dropdown - FIXED: Proper deduplication
     const getUniqueJobs = () => {
         const jobMap = new Map();
 
@@ -142,7 +132,6 @@ export default function RecruiterApplicationsPage() {
 
     const uniqueJobs = getUniqueJobs();
 
-    // Apply filters and sorting
     useEffect(() => {
         if (applications.length === 0) {
             setFilteredApplications([]);
@@ -207,7 +196,7 @@ export default function RecruiterApplicationsPage() {
             test_scheduled: 'bg-blue-100 text-blue-800 border-blue-200',
             interview_scheduled: 'bg-purple-100 text-purple-800 border-purple-200',
             waiting_for_result: 'bg-orange-100 text-orange-800 border-orange-200',
-            hired: 'bg-green-100 text-green-800 border-green-200', 
+            hired: 'bg-green-100 text-green-800 border-green-200',
             rejected: 'bg-red-100 text-red-800 border-red-200'
         };
         return colors[status] || 'bg-gray-100 text-gray-800 border-gray-200';
@@ -231,7 +220,6 @@ export default function RecruiterApplicationsPage() {
         });
     };
 
-    // Handler functions
     const handleFilterChange = (key, value) => {
         setFilters(prev => ({ ...prev, [key]: value }));
     };
@@ -254,7 +242,7 @@ export default function RecruiterApplicationsPage() {
     const hasActiveFilters = filters.status !== 'all' || filters.jobId !== 'all' || filters.search;
 
     // Loading state
-    if (!user || isLoading) {
+    if (isLoading) {
         return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center">
                 <div className="text-center p-8 bg-white rounded-xl shadow-lg">
@@ -265,6 +253,39 @@ export default function RecruiterApplicationsPage() {
         );
     }
 
+    // Add this check for unauthenticated users
+    if (!user) {
+        return (
+            <>
+                <Navbar />
+                <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                    <div className="text-center bg-white rounded-2xl shadow-xl border border-gray-200 p-8 max-w-md">
+                        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <X className="w-8 h-8 text-red-500" />
+                        </div>
+                        <h2 className="text-2xl font-bold text-gray-900 mb-4">Authentication Required</h2>
+                        <p className="text-gray-600 mb-6">You need to be signed in to view applications.</p>
+                        <div className="flex flex-col gap-3">
+                            <Link
+                                href="/signin"
+                                className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+                            >
+                                Sign In
+                            </Link>
+                            <Link
+                                href="/"
+                                className="inline-flex items-center justify-center gap-2 px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 transition-all duration-200"
+                            >
+                                Go Home
+                            </Link>
+                        </div>
+                    </div>
+                </div>
+                <Footer />
+            </>
+        );
+    }
+
     return (
         <>
             <Navbar />
@@ -272,6 +293,15 @@ export default function RecruiterApplicationsPage() {
                 {/* Header */}
                 <header className="bg-white border-gray-200 shadow-md">
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                        <div className="flex items-center gap-4 mb-4">
+                            <Link
+                                href="/dashboard"
+                                className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-all duration-200 font-medium group"
+                            >
+                                <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+                                Back to Dashboard
+                            </Link>
+                        </div>
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
                             <div>
                                 <h1 className="text-4xl font-extrabold text-gray-900">Application Tracker 🚀</h1>

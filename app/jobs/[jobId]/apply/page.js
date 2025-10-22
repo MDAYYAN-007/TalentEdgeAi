@@ -12,11 +12,11 @@ import { saveProfile } from '@/actions/profile/saveProfile';
 import { checkApplication } from '@/actions/applications/checkApplication';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
-import { ArrowLeft, CheckCircle, AlertCircle, Edit3, Save, X, Star, Zap, Plus, Trash2, Phone, Linkedin, Globe, GraduationCap, Briefcase, BookOpen, User, Github, Target, FileText, Search, ChevronRight } from 'lucide-react';
+import { ArrowLeft, CheckCircle, AlertCircle, Building2, MapPin, Clock, DollarSign, LogIn, Edit3, Save, X, Star, Zap, Plus, Trash2, Phone, Linkedin, Globe, GraduationCap, Briefcase, BookOpen, User, Github, Target, FileText, Search, ChevronRight } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import Link from 'next/link';
 import { scoreResume } from '@/actions/applications/scoreResume';
-import { updateUserToken } from '@/actions/auth/updateToken';
+import { getCurrentUser } from '@/actions/auth/auth-utils';
 
 export default function ApplyJobPage() {
     const params = useParams();
@@ -47,30 +47,52 @@ export default function ApplyJobPage() {
     const [applicationId, setApplicationId] = useState(null);
 
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        if (!token) {
-            toast.error('Please sign in to apply for this job');
-            router.push('/signin');
-            return;
-        }
+        const fetchUserAndJob = async () => {
+            try {
+                const currentUser = await getCurrentUser();
+                setUser(currentUser);
 
-        try {
-            const decoded = jwtDecode(token);
-            setUser(decoded);
+                // Check if currentUser exists before accessing its properties
+                if (!currentUser) {
+                    console.log('No user found - user not signed in');
+                    fetchJobOnly(jobId);
+                    return;
+                }
 
-            if (!decoded.isProfileComplete) {
-                setIsProfileComplete(false);
-                setForceProfileComplete(true); // Force profile completion
-            } else {
-                setIsProfileComplete(true);
+                if (!currentUser.isProfileComplete) {
+                    console.log('Current User:', currentUser);
+                    setIsProfileComplete(false);
+                    setForceProfileComplete(true);
+                } else {
+                    setIsProfileComplete(true);
+                }
+
+                fetchJobAndProfile(jobId, currentUser);
+            } catch (error) {
+                console.error('Error decoding token:', error);
+                // If there's an error, user is not signed in
+                fetchJobOnly(jobId);
             }
+        };
 
-            fetchJobAndProfile(jobId, decoded);
-        } catch (error) {
-            console.error('Error decoding token:', error);
-            router.push('/signin');
-        }
+        fetchUserAndJob();
     }, [jobId, router]);
+
+    const fetchJobOnly = async (jobId) => {
+        try {
+            const jobResult = await getJobDetails(jobId);
+            if (jobResult.success && jobResult.job) {
+                setJob(jobResult.job);
+            } else {
+                toast.error('Job not found');
+            }
+        } catch (error) {
+            console.error('Error fetching job:', error);
+            toast.error('Error loading job details');
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     const fetchJobAndProfile = async (jobId, decoded) => {
         try {
@@ -90,20 +112,6 @@ export default function ApplyJobPage() {
                 setProfile(newData);
                 setApplicationData(newData);
                 setTempApplicationData(newData);
-                if (!user?.isProfileComplete) {
-                    const newToken = {
-                        id: decoded.id,
-                        email: decoded.email,
-                        role: decoded.role,
-                        name: decoded.name,
-                        orgName: decoded.orgName,
-                        isProfileComplete: true,
-                        orgId: decoded.org_id
-                    }
-                    const signedToken = await updateUserToken(newToken);
-                    localStorage.setItem('token', signedToken.token);
-                    setUser(newToken);
-                }
                 setIsProfileComplete(true);
                 setForceProfileComplete(false);
             } else {
@@ -123,8 +131,9 @@ export default function ApplyJobPage() {
             }
 
             if (applicationResult.success) {
-                setHasApplied(applicationResult.hasApplied);
-                setApplicationId(applicationResult.application.id || null);
+                console.log('Application Check Result:', applicationResult);
+                setHasApplied(applicationResult?.hasApplied);
+                setApplicationId(applicationResult?.application?.id || null);
                 setExistingApplication(applicationResult.application || null);
 
                 if (applicationResult.hasApplied) {
@@ -350,12 +359,10 @@ export default function ApplyJobPage() {
     };
 
     const handleCancelEdit = () => {
-        // Only allow cancel if profile is already complete
         if (isProfileComplete) {
             setTempApplicationData(applicationData);
             setIsEditModalOpen(false);
         }
-        // If profile is not complete, don't allow closing - user must complete profile
     };
 
     const getScoreMessage = (score) => {
@@ -606,6 +613,121 @@ export default function ApplyJobPage() {
         );
     }
 
+    if (!user) {
+        return (
+            <>
+                <Toaster />
+                <Navbar />
+                <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 pb-8 md:pb-12">
+
+                    <div className="bg-white border-b border-gray-200 shadow-sm relative overflow-hidden mb-6">
+                        <div className="absolute inset-0 bg-gradient-to-r from-blue-50 to-indigo-50 opacity-50"></div>
+                        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                            <div className="flex items-center gap-4 mb-4">
+                                <Link
+                                    href="/jobs"
+                                    className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-all duration-200 font-medium group"
+                                >
+                                    <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+                                    Back to Jobs
+                                </Link>
+                            </div>
+
+                            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-3 mb-3">
+                                        <div className="p-2 bg-indigo-100 rounded-lg shadow-sm">
+                                            <Briefcase className="w-6 h-6 text-indigo-600" />
+                                        </div>
+                                        <span className="text-gray-700 font-semibold text-lg bg-white px-3 py-1 rounded-full border">
+                                            Job Details
+                                        </span>
+                                    </div>
+
+                                    <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+                                        {job.title}
+                                    </h1>
+
+                                    <div className="flex flex-wrap items-center gap-4 text-gray-600">
+                                        <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                            <Building2 className="w-4 h-4" />
+                                            <span className="text-sm font-medium">{job.company_name || 'Company'}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                            <MapPin className="w-4 h-4" />
+                                            <span className="text-sm font-medium">{job.location}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                            <Clock className="w-4 h-4" />
+                                            <span className="text-sm font-medium">{job.job_type} • {job.work_mode}</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-col gap-3">
+                                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-green-200 bg-green-50 text-green-700 shadow-sm">
+                                        <CheckCircle className="w-4 h-4" />
+                                        <span className="font-semibold capitalize text-sm">{job.status}</span>
+                                    </div>
+                                    {(job.min_salary || job.max_salary) && (
+                                        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-blue-200 bg-blue-50 text-blue-700 shadow-sm">
+                                            <DollarSign className="w-4 h-4" />
+                                            <span className="font-semibold text-sm">
+                                                {job.currency} {Number(job.min_salary).toLocaleString()}
+                                                {job.max_salary && job.min_salary && ' - '}
+                                                {job.max_salary && Number(job.max_salary).toLocaleString()}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+
+                        </div>
+                    </div>
+                    <div className="max-w-4xl mx-auto px-4">
+                        {/* Sign In Required Section */}
+                        <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-8 md:p-12 text-center">
+                            <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                                <LogIn className="w-10 h-10 text-amber-600" />
+                            </div>
+                            <h2 className="text-2xl md:text-3xl font-bold text-slate-900 mb-4">Sign In Required</h2>
+                            <p className="text-slate-600 mb-6 text-lg">
+                                You need to be signed in to apply for this position.
+                            </p>
+                            <p className="text-slate-500 mb-8">
+                                Create an account or sign in to submit your application for <span className="font-semibold text-slate-900">{job.title}</span> at <span className="font-semibold text-slate-900">{job.company_name}</span>.
+                            </p>
+
+                            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                                <Link
+                                    href="/signin"
+                                    className="inline-flex items-center justify-center gap-2 px-8 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all duration-200 cursor-pointer active:scale-95"
+                                >
+                                    <LogIn className="w-5 h-5" />
+                                    Sign In to Apply
+                                </Link>
+                                <Link
+                                    href="/signup"
+                                    className="inline-flex items-center justify-center gap-2 px-8 py-3 border-2 border-slate-300 text-slate-700 rounded-lg font-semibold hover:bg-slate-50 hover:border-slate-400 transition-all duration-200 cursor-pointer active:scale-95"
+                                >
+                                    Create Account
+                                </Link>
+                            </div>
+
+                            <div className="mt-8 pt-6 border-t border-slate-200">
+                                <p className="text-sm text-slate-500">
+                                    Don't have an account? <Link href="/signup" className="text-indigo-600 hover:text-indigo-700 font-medium">Sign up here</Link>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <Footer />
+            </>
+        );
+    }
+
     if (hasApplied) {
         return (
             <>
@@ -677,63 +799,128 @@ export default function ApplyJobPage() {
         <>
             <Toaster />
             <Navbar />
-            <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 py-8 md:py-12">
-                <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-                    {/* Header */}
-                    <div className="bg-gradient-to-br from-indigo-600 via-purple-600 to-indigo-700 rounded-2xl shadow-xl border border-indigo-400/30 p-6 md:p-8 mb-6 md:mb-8 relative overflow-hidden">
-                        {/* Decorative Background Elements */}
-                        <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full -mr-20 -mt-20"></div>
-                        <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/5 rounded-full -ml-16 -mb-16"></div>
+            <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 pb-8 md:pb-12">
+                {/* Header */}
+                <div className="bg-white border-b border-gray-200 shadow-sm relative overflow-hidden mb-6">
+                    <div className="absolute inset-0 bg-gradient-to-r from-blue-50 to-indigo-50 opacity-50"></div>
+                    <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                        <div className="flex items-center gap-4 mb-4">
+                            <button
+                                onClick={() => router.back()}
+                                className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-all duration-200 font-medium group cursor-pointer"
+                            >
+                                <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+                                Back to Job
+                            </button>
+                        </div>
 
-                        <div className="relative z-10 flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
-                            <div className="flex-1 min-w-0">
-                                <button
-                                    onClick={() => router.back()}
-                                    className="inline-flex items-center gap-2 text-white/80 hover:text-white transition-all duration-200 font-medium cursor-pointer mb-4 group"
-                                >
-                                    <ArrowLeft className="w-4 h-4 transition-transform duration-200 group-hover:-translate-x-1" />
-                                    Back to Job
-                                </button>
-                                <h1 className="text-3xl md:text-4xl font-bold text-white mb-2 break-words">Apply for {job.title}</h1>
-                                <p className="text-indigo-100 flex items-center gap-2">
-                                    <span className="inline-block w-1.5 h-1.5 bg-indigo-200 rounded-full"></span>
-                                    {job.company_name} • {job.location}
-                                </p>
+                        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                            <div className="flex-1">
+                                <div className="flex items-center gap-3 mb-3">
+                                    <div className="p-2 bg-indigo-100 rounded-lg shadow-sm">
+                                        <Briefcase className="w-6 h-6 text-indigo-600" />
+                                    </div>
+                                    <span className="text-gray-700 font-semibold text-lg bg-white px-3 py-1 rounded-full border">
+                                        Job Application
+                                    </span>
+                                </div>
+
+                                <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+                                    {job.title}
+                                </h1>
+
+                                <div className="flex flex-wrap items-center gap-4 text-gray-600 mb-4">
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <Building2 className="w-4 h-4" />
+                                        <span className="text-sm font-medium">{job.company_name || 'Company'}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <MapPin className="w-4 h-4" />
+                                        <span className="text-sm font-medium">{job.location}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <Clock className="w-4 h-4" />
+                                        <span className="text-sm font-medium">{job.job_type} • {job.work_mode}</span>
+                                    </div>
+                                    {job.experience_level && (
+                                        <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                            <User className="w-4 h-4" />
+                                            <span className="text-sm font-medium">{job.experience_level}</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Additional Job Info */}
+                                <div className="flex flex-wrap gap-3 text-sm text-gray-600">
+                                    {job.department && (
+                                        <div className="flex items-center gap-1">
+                                            <span className="font-medium">Department:</span>
+                                            <span>{job.department}</span>
+                                        </div>
+                                    )}
+                                    {(job.min_salary || job.max_salary) && (
+                                        <div className="flex items-center gap-1">
+                                            <span className="font-medium">Salary:</span>
+                                            <span>
+                                                {job.currency} {Number(job.min_salary).toLocaleString()}
+                                                {job.max_salary && job.min_salary && ' - '}
+                                                {job.max_salary && Number(job.max_salary).toLocaleString()}
+                                            </span>
+                                        </div>
+                                    )}
+                                    {job.status && (
+                                        <div className="flex items-center gap-1">
+                                            <span className="font-medium">Status:</span>
+                                            <span className="capitalize">{job.status}</span>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
-                            {/* Resume Score Display */}
-                            <div className="text-center flex-shrink-0">
-                                <div className={`px-4 md:px-6 py-3 md:py-4 rounded-xl backdrop-blur-sm border ${resumeScore >= 80 ? 'bg-green-400/20 text-green-50 border-green-300/40' :
-                                    resumeScore >= 60 ? 'bg-yellow-400/20 text-yellow-50 border-yellow-300/40' :
-                                        'bg-white/10 text-indigo-50 border-white/20'
-                                    }`}>
-                                    <p className="text-xs md:text-sm font-semibold">Resume Score</p>
-                                    <p className="text-2xl md:text-3xl font-bold">
-                                        {resumeScore !== null ? `${resumeScore}%` : '--'}
-                                    </p>
-                                </div>
-                                {!resumeScore && (
-                                    <button
-                                        onClick={generateAIScore}
-                                        disabled={isScoring}
-                                        className="mt-2 inline-flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-all duration-200 text-sm font-medium cursor-pointer active:scale-95 border border-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        {isScoring ? (
-                                            <>
-                                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                                                AI Analyzing...
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Zap className="w-4 h-4" />
-                                                Get AI Score
-                                            </>
+                            {/* Resume Score & Application Status */}
+                            <div className="flex flex-col gap-4">
+                                {/* Resume Score */}
+                                <div className="text-center">
+                                    <div className={`px-4 md:px-6 py-3 md:py-4 rounded-xl border-2 ${resumeScore >= 80 ? 'border-green-200 bg-green-50 text-green-700' :
+                                        resumeScore >= 60 ? 'border-yellow-200 bg-yellow-50 text-yellow-700' :
+                                            'border-blue-200 bg-blue-50 text-blue-700'
+                                        } shadow-sm`}>
+                                        <p className="text-xs md:text-sm font-semibold">Resume Match Score</p>
+                                        <p className="text-2xl md:text-3xl font-bold">
+                                            {resumeScore !== null ? `${resumeScore}%` : '--'}
+                                        </p>
+                                        {resumeScore !== null && (
+                                            <p className="text-xs mt-1 opacity-75">
+                                                {getScoreMessage(resumeScore)}
+                                            </p>
                                         )}
-                                    </button>
-                                )}
+                                    </div>
+                                    {!resumeScore && (
+                                        <button
+                                            onClick={generateAIScore}
+                                            disabled={isScoring}
+                                            className="mt-2 inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                                        >
+                                            {isScoring ? (
+                                                <>
+                                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                                    AI Analyzing...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Zap className="w-4 h-4" />
+                                                    Get AI Score
+                                                </>
+                                            )}
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
+                </div>
+
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
                         {/* Left Column - Application Form */}

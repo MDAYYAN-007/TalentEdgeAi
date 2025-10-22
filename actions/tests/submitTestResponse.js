@@ -4,7 +4,6 @@ import { query } from '@/actions/db';
 
 export async function submitTestResponse(attemptId, questionId, response) {
     try {
-        // First, check if a response already exists
         const checkSql = `
             SELECT id FROM test_responses 
             WHERE attempt_id = $1 AND question_id = $2

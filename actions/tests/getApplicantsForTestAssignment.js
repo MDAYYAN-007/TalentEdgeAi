@@ -3,7 +3,7 @@
 
 import { query } from '@/actions/db';
 
-export async function getApplicantsForTestAssignment(orgId, currentTestId,userId) {
+export async function getApplicantsForTestAssignment(orgId, currentTestId, userId) {
     try {
         const sql = `
             SELECT 
@@ -24,20 +24,26 @@ export async function getApplicantsForTestAssignment(orgId, currentTestId,userId
                 p.education,
                 p.skills,
                 p.projects,
-                -- Check if already assigned to this specific test
+                -- Check if already assigned to this specific test with status 'assigned'
                 EXISTS(
                     SELECT 1 FROM test_assignments ta 
-                    WHERE ta.application_id = a.id AND ta.test_id = $2
+                    WHERE ta.application_id = a.id 
+                    AND ta.test_id = $2 
+                    AND ta.status = 'assigned'
                 ) as already_assigned_to_this_test,
-                -- Get count of other test assignments
+                -- Get count of other test assignments with status 'assigned'
                 (
                     SELECT COUNT(*) FROM test_assignments ta 
-                    WHERE ta.application_id = a.id AND ta.test_id != $2
+                    WHERE ta.application_id = a.id 
+                    AND ta.test_id != $2 
+                    AND ta.status = 'assigned'
                 ) as other_test_assignments_count
             FROM applications a
             INNER JOIN jobs j ON a.job_id = j.id
             INNER JOIN users u ON a.applicant_id = u.id
             LEFT JOIN profiles p ON u.id = p.user_id
+            -- Only include applicants who have an 'assigned' status for this test
+            INNER JOIN test_assignments ta ON a.id = ta.application_id AND ta.test_id = $2 AND ta.status = 'assigned'
             WHERE j.org_id = $1 
             AND a.status IN ('shortlisted', 'test_scheduled','interview_scheduled')
             AND j.status = 'Active'
@@ -45,7 +51,7 @@ export async function getApplicantsForTestAssignment(orgId, currentTestId,userId
             ORDER BY a.resume_score DESC, a.applied_at DESC
         `;
 
-        const result = await query(sql, [orgId, currentTestId,userId]);
+        const result = await query(sql, [orgId, currentTestId, userId]);
 
         return {
             success: true,

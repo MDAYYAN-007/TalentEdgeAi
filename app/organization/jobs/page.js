@@ -3,9 +3,9 @@
 import Footer from '@/components/Footer';
 import Navbar from '@/components/Navbar';
 import { useState, useEffect } from 'react';
-import { jwtDecode } from 'jwt-decode';
+import { getCurrentUser } from '@/actions/auth/auth-utils';
 import { useRouter } from 'next/navigation';
-import { Briefcase, MapPin, DollarSign, User, Loader2, ChevronRight, Filter, Building2, Calendar, ArrowUpDown, Check } from 'lucide-react';
+import { Briefcase, ArrowLeft, ChevronDown, MapPin, DollarSign, User, Loader2, ChevronRight, Filter, Building2, Calendar, ArrowUpDown, Check } from 'lucide-react';
 import Link from 'next/link';
 import { getJobs } from '@/actions/organization/getJobs';
 
@@ -23,32 +23,41 @@ export default function JobsPage() {
     const [showSortDropdown, setShowSortDropdown] = useState(false);
     const [showFilterDropdown, setShowFilterDropdown] = useState(false);
 
-    // Roles authorized to manage jobs
-    const isManager = user && ['OrgAdmin', 'Senior Manager', 'HR Recruiter'].includes(user.role);
+    const isManager = user && ['OrgAdmin', 'SeniorHR', 'HR'].includes(user.role);
 
     useEffect(() => {
         const fetchJobsData = async () => {
-            const token = localStorage.getItem("token");
-            if (!token) {
-                router.push('/signin');
-                return;
-            }
-
             try {
-                const decoded = jwtDecode(token);
-                if (!decoded.orgId) {
-                    setError("Access Denied: You must belong to an organization to view internal jobs.");
+                const currentUser = await getCurrentUser();
+
+                if (!currentUser) {
+                    // User is not authenticated - we'll handle this in the UI
+                    setUser(null);
                     setIsLoading(false);
                     return;
                 }
 
-                setUser(decoded);
+                if (!currentUser.orgId) {
+                    setError("Access Denied: You must belong to an organization to view internal jobs.");
+                    setUser(currentUser);
+                    setIsLoading(false);
+                    return;
+                }
+
+                setUser(currentUser);
+
+                // Check if user is authorized to view jobs
+                if (!['HR', 'SeniorHR', 'OrgAdmin'].includes(currentUser.role)) {
+                    setError("You are not authorized to view organization jobs.");
+                    setIsLoading(false);
+                    return;
+                }
 
                 // Prepare auth data for server action
                 const authData = {
-                    orgId: decoded.orgId,
-                    userId: decoded.id,
-                    userRole: decoded.role
+                    orgId: currentUser.orgId,
+                    userId: currentUser.id,
+                    userRole: currentUser.role
                 };
 
                 // Use the server action instead of API route
@@ -131,10 +140,8 @@ export default function JobsPage() {
         });
     };
 
-    // Close dropdowns when clicking outside - FIXED VERSION
     useEffect(() => {
         const handleClickOutside = (event) => {
-            // Check if click is outside both dropdown containers
             const isOutsideSort = !event.target.closest('.sort-dropdown');
             const isOutsideFilter = !event.target.closest('.filter-dropdown');
 
@@ -144,7 +151,6 @@ export default function JobsPage() {
             }
         };
 
-        // Use setTimeout to ensure this runs after the click event
         setTimeout(() => {
             document.addEventListener('click', handleClickOutside);
         }, 0);
@@ -152,7 +158,7 @@ export default function JobsPage() {
         return () => {
             document.removeEventListener('click', handleClickOutside);
         };
-    }, []);
+    }, [router]);
 
     useEffect(() => {
         // Scroll to top immediately
@@ -202,6 +208,88 @@ export default function JobsPage() {
         setShowFilterDropdown(false);
     };
 
+    // Unauthenticated Component
+    const UnauthenticatedComponent = () => (
+        <>
+            <Navbar />
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50">
+                <div className="max-w-md w-full">
+                    <div className="relative">
+                        <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl blur-2xl opacity-20"></div>
+                        <div className="relative bg-white/80 backdrop-blur-xl p-8 sm:p-10 rounded-3xl shadow-2xl border border-white/20 text-center space-y-6">
+                            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg">
+                                <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h1 className="text-3xl font-bold text-slate-900 mb-2">
+                                    Authentication Required
+                                </h1>
+                                <p className="text-slate-600">
+                                    You need to be signed in to view job listings.
+                                </p>
+                            </div>
+                            <div className="flex flex-col gap-3">
+                                <button
+                                    onClick={() => router.push('/signin')}
+                                    className="w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all"
+                                >
+                                    Sign In
+                                </button>
+                                <button
+                                    onClick={() => router.push('/')}
+                                    className="w-full px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-all"
+                                >
+                                    Go Home
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <Footer />
+        </>
+    );
+
+    // Unauthorized Component
+    const UnauthorizedComponent = () => (
+        <>
+            <Navbar />
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50">
+                <div className="max-w-md w-full">
+                    <div className="relative">
+                        <div className="absolute inset-0 bg-gradient-to-r from-red-600 to-orange-600 rounded-3xl blur-2xl opacity-20"></div>
+                        <div className="relative bg-white/80 backdrop-blur-xl p-8 sm:p-10 rounded-3xl shadow-2xl border border-white/20 text-center space-y-6">
+                            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-red-500 to-orange-600 shadow-lg">
+                                <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h1 className="text-3xl font-bold text-slate-900 mb-2">
+                                    Access Denied
+                                </h1>
+                                <p className="text-slate-600">
+                                    Only <strong>HR</strong>, <strong>SeniorHR</strong>, and <strong>OrgAdmin</strong> can view organization jobs.
+                                </p>
+                            </div>
+                            <div className="pt-2">
+                                <button
+                                    onClick={() => router.push('/dashboard')}
+                                    className="cursor-pointer w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all"
+                                >
+                                    Go to Dashboard
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <Footer />
+        </>
+    );
+
     if (isLoading) {
         return (
             <>
@@ -225,52 +313,95 @@ export default function JobsPage() {
         );
     }
 
-    if (error) {
-        return (
-            <>
-                <Navbar />
-                <div className="min-h-screen flex items-center justify-center p-8">
-                    <div className="text-center bg-red-50 border border-red-200 p-8 rounded-xl shadow-lg">
-                        <h1 className="text-2xl font-bold text-red-700 mb-4">Error Accessing Jobs</h1>
-                        <p className="text-red-600">{error}</p>
-                    </div>
-                </div>
-                <Footer />
-            </>
-        );
+    // Show unauthenticated component if no user
+    if (!user && !isLoading) {
+        return <UnauthenticatedComponent />;
+    }
+
+    // Check if user is unauthorized
+    if (user && !isManager) {
+        return <UnauthorizedComponent />;
     }
 
     return (
         <>
             <Navbar />
-            <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50 p-4 sm:p-6 lg:p-8">
-                <div className="max-w-7xl mx-auto">
-                    {/* Header */}
-                    <div className="bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500 rounded-3xl shadow-xl border border-indigo-300/20 p-6 sm:p-8 mb-6">
-                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                            <div>
-                                <h1 className="text-3xl sm:text-4xl font-bold text-white flex items-center gap-2">
-                                    <Building2 className='w-7 h-7' />
-                                    {user?.orgName || 'Company'} Open Jobs
+            <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50">
+                {/* Header */}
+                <div className="bg-white border-b border-gray-200 shadow-sm relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-r from-blue-50 to-indigo-50 opacity-50"></div>
+                    <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                        <div className="flex items-center gap-4 mb-4">
+                            <Link
+                                href="/dashboard"
+                                className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-all duration-200 font-medium group"
+                            >
+                                <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+                                Back to Dashboard
+                            </Link>
+                        </div>
+
+                        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                            <div className="flex-1">
+                                <div className="flex items-center gap-3 mb-3">
+                                    <div className="p-2 bg-indigo-100 rounded-lg shadow-sm">
+                                        <Building2 className="w-6 h-6 text-indigo-600" />
+                                    </div>
+                                    <span className="text-gray-700 font-semibold text-lg bg-white px-3 py-1 rounded-full border">
+                                        Job Listings
+                                    </span>
+                                </div>
+
+                                <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+                                    {user?.orgName || 'Company'} Open Positions
                                 </h1>
-                                <p className="text-indigo-100 mt-1">
-                                    View available positions across the organization.
-                                </p>
+
+                                <div className="flex flex-wrap items-center gap-4 text-gray-600">
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <Briefcase className="w-4 h-4" />
+                                        <span className="text-sm font-medium">{jobs.length} Total Jobs</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <MapPin className="w-4 h-4" />
+                                        <span className="text-sm font-medium">Multiple Locations</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <User className="w-4 h-4" />
+                                        <span className="text-sm font-medium">Role: {user?.role}</span>
+                                    </div>
+                                </div>
                             </div>
 
-                            {/* Create Job Button (Visible only to authorized roles) */}
+                            <div className="flex flex-col gap-3">
+                                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-green-200 bg-green-50 text-green-700 shadow-sm">
+                                    <Check className="w-4 h-4" />
+                                    <span className="font-semibold capitalize text-sm">{filteredJobs.length} Active Listings</span>
+                                </div>
+                                {isManager && (
+                                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-blue-200 bg-blue-50 text-blue-700 shadow-sm">
+                                        <Briefcase className="w-4 h-4" />
+                                        <span className="font-semibold text-sm">Manager Access</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Quick Actions */}
+                        <div className="flex flex-wrap gap-3 mt-6 pt-6 border-t border-gray-200">
                             {isManager && (
                                 <Link
-                                    href="/create-job"
-                                    className="flex items-center cursor-pointer gap-2 bg-white hover:bg-indigo-50 text-indigo-600 px-6 py-3 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all border border-white/20"
+                                    href="/organization/create-job"
+                                    className="cursor-pointer flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-lg hover:shadow-xl"
                                 >
-                                    <Briefcase className="w-5 h-5" />
+                                    <Briefcase className="w-4 h-4" />
                                     Post New Job
                                 </Link>
                             )}
                         </div>
                     </div>
+                </div>
 
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                     {/* Filter and Role Information */}
                     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 p-4 bg-white/70 rounded-xl shadow-md border border-slate-200">
                         <div className="flex items-center gap-2">
@@ -286,7 +417,7 @@ export default function JobsPage() {
                             <div className="relative sort-dropdown">
                                 <button
                                     onClick={handleSortClick}
-                                    className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                                    className="cursor-pointer flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
                                 >
                                     <ArrowUpDown className="w-4 h-4" />
                                     Sort: {sortOptions.find(opt => opt.value === sortBy)?.label}
@@ -314,7 +445,7 @@ export default function JobsPage() {
                             <div className="relative filter-dropdown">
                                 <button
                                     onClick={handleFilterClick}
-                                    className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                                    className="cursor-pointer flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
                                 >
                                     <Filter className="w-4 h-4" />
                                     Filter: {statusOptions.find(opt => opt.value === statusFilter)?.label}
@@ -363,7 +494,7 @@ export default function JobsPage() {
                                 </p>
                                 {isManager && jobs.length === 0 && (
                                     <Link
-                                        href="/create-job"
+                                        href="/organization/create-job"
                                         className="mt-6 cursor-pointer inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-semibold hover:from-indigo-700 hover:to-purple-700 transition-all"
                                     >
                                         Post Your First Job
@@ -418,6 +549,8 @@ export default function JobsPage() {
                                     </div>
                                     <Link
                                         href={`/organization/jobs/${job.id}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
                                         className="flex items-center gap-1 px-4 py-2 cursor-pointer bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm"
                                     >
                                         View Details

@@ -5,26 +5,37 @@ import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { signInUser } from "@/actions/auth/signin";
+import { getCurrentUser } from "@/actions/auth/auth-utils";
 import { AiOutlineEye, AiOutlineEyeInvisible } from 'react-icons/ai';
+import { logout } from "@/actions/auth/logout";
 
 export default function SignInPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [isPageLoading, setIsPageLoading] = useState(true);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [user, setUser] = useState(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const router = useRouter();
 
+  // Check if user is already signed in
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      setIsLoggedIn(true);
-    }
-    setIsPageLoading(false);
-  }, []);
+    const checkAuth = async () => {
+      try {
+        const currentUser = await getCurrentUser();
+        if (currentUser) {
+          setUser(currentUser);
+        }
+      } catch (error) {
+        console.error("Auth check error:", error);
+      } finally {
+        setCheckingAuth(false);
+      }
+    };
 
+    checkAuth();
+  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -35,7 +46,6 @@ export default function SignInPage() {
       const data = await signInUser({ email, password });
 
       if (data.success) {
-        localStorage.setItem("token", data.token);
         router.push("/dashboard");
       } else {
         // Handle different error scenarios
@@ -58,21 +68,25 @@ export default function SignInPage() {
     }
   };
 
-  if (isPageLoading) {
+  const handleSignOut = async () => {
+    try {
+      await logout();
+      setUser(null);
+      router.refresh();
+    } catch (error) {
+      console.error("Sign out error:", error);
+    }
+  };
+
+  // Show loading while checking authentication
+  if (checkingAuth) {
     return (
       <>
         <Navbar />
-        <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50 px-4">
-          {/* Spinning loader */}
-          <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-indigo-600 border-b-4 mb-6"></div>
-
-          {/* Loading text */}
-          <p className="text-lg text-slate-700 font-semibold">Loading, please wait...</p>
-
-          {/* Optional subtle animation or background effect */}
-          <div className="absolute inset-0 overflow-hidden pointer-events-none">
-            <div className="absolute top-1/4 -right-40 w-96 h-96 bg-indigo-400/10 rounded-full blur-3xl animate-pulse"></div>
-            <div className="absolute bottom-1/4 -left-40 w-96 h-96 bg-purple-400/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+            <p className="text-slate-600">Checking authentication...</p>
           </div>
         </div>
         <Footer />
@@ -80,139 +94,136 @@ export default function SignInPage() {
     );
   }
 
-  if (isLoggedIn) {
+  // Show "already signed in" component if user exists
+  if (user) {
     return (
       <>
         <Navbar />
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50 relative overflow-hidden flex items-center justify-center px-4 py-12">
+        <main className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50 relative overflow-hidden">
           {/* Background decorative elements */}
           <div className="absolute inset-0 overflow-hidden pointer-events-none">
-            <div className="absolute top-1/4 -right-40 w-96 h-96 bg-indigo-400/10 rounded-full blur-3xl animate-pulse"></div>
-            <div className="absolute bottom-1/4 -left-40 w-96 h-96 bg-purple-400/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
+            <div className="absolute top-1/4 -right-40 w-96 h-96 bg-indigo-400/10 rounded-full blur-3xl"></div>
+            <div className="absolute bottom-1/4 -left-40 w-96 h-96 bg-purple-400/10 rounded-full blur-3xl"></div>
           </div>
 
-          <div className="relative max-w-4xl w-full">
-            {/* Main Card */}
-            <div className="relative">
-              {/* Glow effect */}
-              <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl blur-2xl opacity-20 animate-pulse"></div>
+          <div className="relative flex items-center justify-center px-4 py-12 sm:py-16 lg:py-20">
+            <div className="max-w-2xl w-full">
+              <div className="relative">
+                {/* Glow effect */}
+                <div className="absolute inset-0 bg-gradient-to-r from-green-600 to-emerald-600 rounded-3xl blur-2xl opacity-20"></div>
 
-              <div className="relative bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 overflow-hidden">
-                {/* Top decorative bar */}
-                <div className="h-2 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600"></div>
-
-                <div className="p-8 sm:p-12 lg:p-16 text-center">
-                  {/* Success Icon with animation */}
-                  <div className="inline-flex items-center justify-center w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 shadow-lg shadow-green-500/30 mb-6 animate-bounce-slow">
-                    <svg className="w-10 h-10 sm:w-12 sm:h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                <div className="relative bg-white/80 backdrop-blur-xl p-8 sm:p-10 rounded-3xl shadow-2xl border border-white/20 text-center space-y-8">
+                  {/* Success Icon */}
+                  <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 shadow-lg mx-auto">
+                    <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                     </svg>
                   </div>
 
-                  {/* Heading */}
-                  <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-slate-900 mb-4">
-                    Welcome Back! 👋
-                  </h2>
+                  {/* Welcome Message */}
+                  <div className="space-y-4">
+                    <div className="inline-flex items-center px-4 py-2 rounded-full bg-green-100/80 backdrop-blur-sm border border-green-200/50 mx-auto">
+                      <span className="text-sm font-semibold text-green-700">Welcome Back!</span>
+                    </div>
 
-                  <p className="text-lg sm:text-xl text-slate-600 mb-8 max-w-2xl mx-auto">
-                    You're already logged in and ready to go. Continue to your dashboard to manage your applications and prepare for interviews.
-                  </p>
+                    <h1 className="text-3xl sm:text-4xl font-bold text-slate-900">
+                      You're Already Signed In
+                    </h1>
 
-                  {/* Quick Stats or Features */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10 max-w-3xl mx-auto">
-                    <div className="p-4 rounded-xl bg-indigo-50/80 border border-indigo-100 hover:border-indigo-200 transition-all hover:shadow-md">
-                      <div className="text-3xl mb-2">📊</div>
-                      <p className="text-sm font-semibold text-slate-900">Track Applications</p>
-                      <p className="text-xs text-slate-600 mt-1">Monitor your progress</p>
-                    </div>
-                    <div className="p-4 rounded-xl bg-purple-50/80 border border-purple-100 hover:border-purple-200 transition-all hover:shadow-md">
-                      <div className="text-3xl mb-2">🤖</div>
-                      <p className="text-sm font-semibold text-slate-900">AI Interview Prep</p>
-                      <p className="text-xs text-slate-600 mt-1">Practice with AI</p>
-                    </div>
-                    <div className="p-4 rounded-xl bg-pink-50/80 border border-pink-100 hover:border-pink-200 transition-all hover:shadow-md">
-                      <div className="text-3xl mb-2">💼</div>
-                      <p className="text-sm font-semibold text-slate-900">New Opportunities</p>
-                      <p className="text-xs text-slate-600 mt-1">Explore job listings</p>
-                    </div>
+                    <p className="text-lg text-slate-600 leading-relaxed">
+                      Welcome back, <span className="font-semibold text-slate-900">{user.name || user.email}</span>!
+                      You're already signed into your account.
+                    </p>
+
+                    {user.orgName && (
+                      <p className="text-sm text-slate-500">
+                        Organization: <span className="font-medium">{user.orgName}</span>
+                      </p>
+                    )}
                   </div>
 
-                  {/* CTA Buttons */}
-                  <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                    <a
-                      href="/dashboard"
-                      className="w-full sm:w-auto group relative px-8 py-4 rounded-xl text-white font-bold shadow-lg transition-all duration-200 flex items-center justify-center text-base bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 shadow-indigo-500/50 hover:shadow-xl hover:shadow-indigo-500/50 hover:-translate-y-0.5 active:translate-y-0"
+                  {/* Action Buttons */}
+                  <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                    <button
+                      onClick={() => router.push("/dashboard")}
+                      className="cursor-pointer flex items-center justify-center gap-2 px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all duration-200 hover:-translate-y-0.5"
                     >
-                      <span className="flex items-center gap-2">
-                        Go to Dashboard
-                        <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                        </svg>
-                      </span>
-                      {/* Shine effect */}
-                      <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-transparent via-white/20 to-transparent transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-                    </a>
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                      </svg>
+                      Go to Dashboard
+                    </button>
 
                     <button
-                      onClick={() => {
-                        localStorage.removeItem('token');
-                        window.location.reload();
-                      }}
-                      className="w-full sm:w-auto cursor-pointer px-8 py-4 rounded-xl text-slate-700 font-semibold border-2 border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all duration-200 flex items-center justify-center gap-2"
+                      onClick={handleSignOut}
+                      className="cursor-pointer flex items-center justify-center gap-2 px-8 py-4 border-2 border-slate-300 text-slate-700 rounded-xl font-bold hover:bg-slate-50 hover:border-slate-400 transition-all duration-200"
                     >
                       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                       </svg>
-                      Sign Out & Login as Different User
+                      Sign Out & Sign In Again
                     </button>
                   </div>
 
-                  {/* Additional Info */}
-                  <div className="mt-10 pt-8 border-t border-slate-200">
-                    <div className="flex items-center justify-center gap-2 text-sm text-slate-500">
-                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  {/* Additional Options */}
+                  <div className="pt-6 border-t border-slate-200/50">
+                    <div className="space-y-3">
+                      <p className="text-sm text-slate-500 text-center">Quick Links:</p>
+                      <div className="flex flex-wrap justify-center gap-2">
+                        <button
+                          onClick={() => router.push("/profile")}
+                          className="cursor-pointer flex items-center gap-2 px-4 py-2 text-sm text-indigo-600 hover:text-indigo-700 font-medium transition-all duration-200 bg-white hover:bg-indigo-50 rounded-lg border border-slate-200 hover:border-indigo-200 hover:shadow-sm hover:-translate-y-0.5"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                          </svg>
+                          Profile
+                        </button>
+                        <button
+                          onClick={() => router.push("/jobs")}
+                          className="cursor-pointer flex items-center gap-2 px-4 py-2 text-sm text-indigo-600 hover:text-indigo-700 font-medium transition-all duration-200 bg-white hover:bg-indigo-50 rounded-lg border border-slate-200 hover:border-indigo-200 hover:shadow-sm hover:-translate-y-0.5"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2-2v2m8 0V6a2 2 0 012 2v6a2 2 0 01-2 2H8a2 2 0 01-2-2V8a2 2 0 012-2V6" />
+                          </svg>
+                          Jobs
+                        </button>
+                        <button
+                          onClick={() => router.push("/applications")}
+                          className="cursor-pointer flex items-center gap-2 px-4 py-2 text-sm text-indigo-600 hover:text-indigo-700 font-medium transition-all duration-200 bg-white hover:bg-indigo-50 rounded-lg border border-slate-200 hover:border-indigo-200 hover:shadow-sm hover:-translate-y-0.5"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          Applications
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Security Note */}
+                  <div className="bg-blue-50/50 border border-blue-200/50 rounded-xl p-4 mt-6">
+                    <div className="flex items-center gap-3">
+                      <svg className="w-5 h-5 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
-                      <span>Your session is secure and active</span>
+                      <div>
+                        <p className="text-sm font-medium text-blue-900">Session Active</p>
+                        <p className="text-xs text-blue-700">Your session is secure and will remain active for 7 days</p>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
-
-            {/* Fun fact or tip box */}
-            <div className="mt-6 p-4 rounded-2xl bg-white/60 backdrop-blur-sm border border-slate-200/50 text-center">
-              <div className="flex items-start justify-center gap-3">
-                <span className="text-2xl">💡</span>
-                <div className="text-left">
-                  <p className="text-sm font-semibold text-slate-900">Pro Tip</p>
-                  <p className="text-xs text-slate-600 mt-1">
-                    Complete your profile to get better job recommendations and increase your chances of landing interviews!
-                  </p>
-                </div>
-              </div>
-            </div>
           </div>
-
-          <style jsx>{`
-        @keyframes bounce-slow {
-          0%, 100% {
-            transform: translateY(0);
-          }
-          50% {
-            transform: translateY(-10px);
-          }
-        }
-        .animate-bounce-slow {
-          animation: bounce-slow 2s ease-in-out infinite;
-        }
-      `}</style>
-        </div>
+        </main>
         <Footer />
       </>
     );
   }
 
+  // Original sign-in form (only shown if user is not signed in)
   return (
     <>
       <Navbar />

@@ -3,7 +3,7 @@
 import Footer from '@/components/Footer';
 import Navbar from '@/components/Navbar';
 import { useEffect, useState } from 'react';
-import { jwtDecode } from 'jwt-decode';
+import { getCurrentUser } from '@/actions/auth/auth-utils';
 import { createJob } from '@/actions/jobs/createJob';
 import { getRecruiters } from '@/actions/jobs/getRecruiters';
 import toast, { Toaster } from 'react-hot-toast';
@@ -39,16 +39,23 @@ export default function CreateJobPage() {
     const [lockedRecruiters, setLockedRecruiters] = useState([]);
     const [isAuthorized, setIsAuthorized] = useState(true);
 
+    const [isLoading, setIsLoading] = useState(true);
+
     useEffect(() => {
-        // Get user info from token
-        const token = localStorage.getItem('token');
-        if (token) {
+        const fetchUserAndCheckAuth = async () => {
             try {
-                const decoded = jwtDecode(token);
-                setUser(decoded);
+                const currentUser = await getCurrentUser();
+
+                if (!currentUser) {
+                    setIsAuthorized(false);
+                    setIsLoading(false);
+                    return;
+                }
+
+                setUser(currentUser);
 
                 // Check if user is authorized to create jobs
-                if (decoded.role === 'user' || decoded.role === 'HR') {
+                if (currentUser.role === 'user' || currentUser.role === 'HR') {
                     setIsAuthorized(false);
                     toast.error('You are not authorized to create jobs. Redirecting...');
                     setTimeout(() => router.push('/dashboard'), 3000);
@@ -56,13 +63,18 @@ export default function CreateJobPage() {
                 }
 
                 // Fetch recruiters for the organization
-                if (decoded.orgId) {
-                    fetchRecruiters(decoded.orgId, decoded.id, decoded.role);
+                if (currentUser.orgId) {
+                    fetchRecruiters(currentUser.orgId, currentUser.id, currentUser.role);
                 }
+
             } catch (error) {
-                console.error('Error decoding token:', error);
+                console.error('Error getting current user:', error);
+                // User is not authenticated - we'll handle this in the UI
+                setIsAuthorized(false);
             }
-        }
+        };
+
+        fetchUserAndCheckAuth();
     }, [router]);
 
     const fetchRecruiters = async (orgId, userId, userRole) => {
@@ -88,6 +100,8 @@ export default function CreateJobPage() {
             }
         } catch (error) {
             console.error('Error fetching recruiters:', error);
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -127,7 +141,7 @@ export default function CreateJobPage() {
         setIsSubmitting(true);
 
         try {
-            // Prepare auth data from user token
+            // Prepare auth data from user state
             const authData = {
                 userId: user?.id,
                 orgId: user?.orgId,
@@ -167,7 +181,6 @@ export default function CreateJobPage() {
         }
     };
 
-    // Check if a recruiter is locked (cannot be unselected)
     const isRecruiterLocked = (recruiterId) => {
         return lockedRecruiters.includes(recruiterId.toString());
     };
@@ -210,7 +223,62 @@ export default function CreateJobPage() {
         }
     };
 
-    // Show unauthorized message if user is not allowed to create jobs
+    if (isLoading) {
+        return (
+            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                <div className="text-center p-8 bg-white rounded-xl shadow-lg">
+                    <Loader2 className="w-10 h-10 animate-spin text-indigo-600 mx-auto mb-4" />
+                    <p className="text-lg font-medium text-gray-700">Loading your page...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (!user) {
+        return (
+            <>
+                <Navbar />
+                <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50">
+                    <div className="max-w-md w-full">
+                        <div className="relative">
+                            <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl blur-2xl opacity-20"></div>
+                            <div className="relative bg-white/80 backdrop-blur-xl p-8 sm:p-10 rounded-3xl shadow-2xl border border-white/20 text-center space-y-6">
+                                <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg">
+                                    <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h1 className="text-3xl font-bold text-slate-900 mb-2">
+                                        Authentication Required
+                                    </h1>
+                                    <p className="text-slate-600">
+                                        You need to be signed in to create job listings.
+                                    </p>
+                                </div>
+                                <div className="flex flex-col gap-3">
+                                    <button
+                                        onClick={() => router.push('/signin')}
+                                        className="w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all"
+                                    >
+                                        Sign In
+                                    </button>
+                                    <button
+                                        onClick={() => router.push('/')}
+                                        className="w-full px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-all"
+                                    >
+                                        Go Home
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <Footer />
+            </>
+        );
+    }
+
     if (!isAuthorized) {
         return (
             <>

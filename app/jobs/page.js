@@ -3,7 +3,7 @@
 import Footer from '@/components/Footer';
 import Navbar from '@/components/Navbar';
 import { useState, useEffect } from 'react';
-import { Briefcase, MapPin, DollarSign, Calendar, Building2, Search, Filter, Clock, Home, ChevronRight, X, Check } from 'lucide-react';
+import { Briefcase, MapPin, DollarSign, Calendar, Building2, Search, Filter, Clock, Home, ChevronRight, X, Check, ArrowLeft, User } from 'lucide-react';
 import Link from 'next/link';
 import { getPublicJobs } from '@/actions/jobs/getPublicJobs';
 
@@ -193,17 +193,74 @@ export default function JobsPage() {
         <>
             <Navbar />
             <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
-                    {/* Header */}
-                    <div className="text-center mb-12">
-                        <h1 className="text-4xl md:text-5xl font-bold text-slate-900 mb-4 tracking-tight">
-                            Find Your Dream Job
-                        </h1>
-                        <p className="text-lg md:text-xl text-slate-600 max-w-2xl mx-auto">
-                            Discover <span className="font-semibold text-blue-600">{jobs.length}+</span> opportunities from top companies. Start your career journey today.
-                        </p>
-                    </div>
 
+                {/* Header */}
+                <div className="bg-white border-b border-gray-200 shadow-sm relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-r from-blue-50 to-indigo-50 opacity-50"></div>
+                    <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                        <div className="flex items-center gap-4 mb-4">
+                            <Link
+                                href="/dashboard"
+                                className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-all duration-200 font-medium group"
+                            >
+                                <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+                                Back to Dashboard
+                            </Link>
+                        </div>
+
+                        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                            <div className="flex-1">
+                                <div className="flex items-center gap-3 mb-3">
+                                    <div className="p-2 bg-indigo-100 rounded-lg shadow-sm">
+                                        <Briefcase className="w-6 h-6 text-indigo-600" />
+                                    </div>
+                                    <span className="text-gray-700 font-semibold text-lg bg-white px-3 py-1 rounded-full border">
+                                        Career Opportunities
+                                    </span>
+                                </div>
+
+                                <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+                                    Explore Exciting Career Opportunities
+                                </h1>
+
+                                <div className="flex flex-wrap items-center gap-4 text-gray-600">
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <Briefcase className="w-4 h-4" />
+                                        <span className="text-sm font-medium">{jobs.length} Total Jobs</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <Building2 className="w-4 h-4" />
+                                        <span className="text-sm font-medium">Multiple Companies</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <MapPin className="w-4 h-4" />
+                                        <span className="text-sm font-medium">Various Locations</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col gap-3">
+                                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-green-200 bg-green-50 text-green-700 shadow-sm">
+                                    <Check className="w-4 h-4" />
+                                    <span className="font-semibold text-sm">{filteredJobs.length} Active Listings</span>
+                                </div>
+                                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-blue-200 bg-blue-50 text-blue-700 shadow-sm">
+                                    <User className="w-4 h-4" />
+                                    <span className="font-semibold text-sm">Public Access</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Quick Info */}
+                        <div className="flex flex-wrap gap-3 mt-6 pt-6 border-t border-gray-200">
+                            <p className="text-gray-600 text-sm">
+                                Discover your next career move from our curated list of opportunities
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
                     {/* Search and Filter Section */}
                     <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/50 p-6 mb-6 transition-all duration-300 hover:shadow-xl hover:border-slate-300/50">
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -383,9 +440,9 @@ export default function JobsPage() {
                                 <div
                                     key={job.id}
                                     className="bg-white rounded-2xl shadow-md border border-slate-200 p-5 md:p-6 hover:shadow-2xl hover:border-blue-300 transition-all duration-300 transform cursor-default"
-                                    
+
                                 >
-                                   
+
                                     <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 md:gap-6">
                                         <div className="flex-1 min-w-0">
                                             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-4">

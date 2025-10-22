@@ -1,14 +1,14 @@
-// app/organization/tests/page.js
 'use client';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { jwtDecode } from 'jwt-decode';
+import { getCurrentUser } from '@/actions/auth/auth-utils';
 import {
     Plus, Search, Filter, Calendar, Users, FileText,
-    Zap, Clock, Star, MoreVertical, Edit, Trash2,
+    Zap, Clock, Star, ArrowLeft, Edit, Trash2,
     Eye, Copy, Play, AlertTriangle, CheckCircle, UserCheck, ChevronDown
 } from 'lucide-react';
+import Link from 'next/link';
 import toast, { Toaster } from 'react-hot-toast';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
@@ -38,41 +38,44 @@ export default function TestsPage() {
     });
 
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        if (!token) {
-            router.push('/signin');
-            return;
-        }
+        const fetchUserAndData = async () => {
+            try {
+                const currentUser = await getCurrentUser();
 
-        try {
-            const decoded = jwtDecode(token);
-            const userData = {
-                name: decoded.name || 'User',
-                email: decoded.email,
-                role: decoded.role || 'User',
-                id: decoded.id,
-                orgId: decoded.orgId
-            };
-            setUser(userData);
+                if (!currentUser) {
+                    setUser(null);
+                    setIsLoading(false);
+                    return;
+                }
 
-            if (decoded.role && !['HR', 'SeniorHR', 'OrgAdmin'].includes(decoded.role)) {
-                router.push('/dashboard');
-                return;
+                // Check authorization
+                if (!['HR', 'SeniorHR', 'OrgAdmin'].includes(currentUser.role)) {
+                    setUser(currentUser);
+                    setIsLoading(false);
+                    return;
+                }
+
+                setUser(currentUser);
+                await fetchTests(currentUser);
+            } catch (error) {
+                console.error('Error fetching user:', error);
+                setUser(null);
+                setIsLoading(false);
             }
-        } catch (err) {
-            console.error('Invalid token', err);
-            localStorage.removeItem('token');
-            router.push('/signin');
-        }
-    }, [router]);
+        };
 
-    const fetchTests = async () => {
-        if (!user?.orgId || !user?.id) return;
+        fetchUserAndData();
+    }, []);
+
+    const fetchTests = async (currentUser = user) => {
+        const userToUse = currentUser || user;
+        if (!userToUse?.orgId || !userToUse?.id) return;
 
         setIsLoading(true);
         try {
-            const result = await getOrganizationTests(user.orgId, user.id);
+            const result = await getOrganizationTests(userToUse.orgId, userToUse.id);
             if (result.success) {
+                console.log('Result tests: ', result.tests)
                 setTests(result.tests);
                 const activeTests = result.tests.filter(test => test.is_active);
                 setStatusFilter('active');
@@ -87,12 +90,6 @@ export default function TestsPage() {
             setIsLoading(false);
         }
     };
-
-    useEffect(() => {
-        if (user) {
-            fetchTests();
-        }
-    }, [user]);
 
     const hasEditAccess = (test) => {
         if (!user) return false;
@@ -206,44 +203,185 @@ export default function TestsPage() {
         };
     };
 
-    if (!user) {
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
-                <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-indigo-600"></div>
+    const UnauthenticatedComponent = () => (
+        <>
+            <Navbar />
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50">
+                <div className="max-w-md w-full">
+                    <div className="relative">
+                        <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl blur-2xl opacity-20"></div>
+                        <div className="relative bg-white/80 backdrop-blur-xl p-8 sm:p-10 rounded-3xl shadow-2xl border border-white/20 text-center space-y-6">
+                            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg">
+                                <FileText className="w-10 h-10 text-white" />
+                            </div>
+                            <div>
+                                <h1 className="text-3xl font-bold text-slate-900 mb-2">
+                                    Authentication Required
+                                </h1>
+                                <p className="text-slate-600">
+                                    You need to be signed in to view tests.
+                                </p>
+                            </div>
+                            <div className="flex flex-col gap-3">
+                                <button
+                                    onClick={() => router.push('/signin')}
+                                    className="w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all"
+                                >
+                                    Sign In
+                                </button>
+                                <button
+                                    onClick={() => router.push('/')}
+                                    className="w-full px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-all"
+                                >
+                                    Go Home
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
+            <Footer />
+        </>
+    );
+
+    const UnauthorizedComponent = () => (
+        <>
+            <Navbar />
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50">
+                <div className="max-w-md w-full">
+                    <div className="relative">
+                        <div className="absolute inset-0 bg-gradient-to-r from-red-600 to-orange-600 rounded-3xl blur-2xl opacity-20"></div>
+                        <div className="relative bg-white/80 backdrop-blur-xl p-8 sm:p-10 rounded-3xl shadow-2xl border border-white/20 text-center space-y-6">
+                            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-red-500 to-orange-600 shadow-lg">
+                                <AlertTriangle className="w-10 h-10 text-white" />
+                            </div>
+                            <div>
+                                <h1 className="text-3xl font-bold text-slate-900 mb-2">
+                                    Access Denied
+                                </h1>
+                                <p className="text-slate-600">
+                                    Only <strong>HR</strong>, <strong>SeniorHR</strong>, and <strong>OrgAdmin</strong> can view tests.
+                                </p>
+                            </div>
+                            <div className="pt-2">
+                                <button
+                                    onClick={() => router.push('/dashboard')}
+                                    className="cursor-pointer w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all"
+                                >
+                                    Go to Dashboard
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <Footer />
+        </>
+    );
+
+    if (isLoading) {
+        return (
+            <>
+                <Navbar />
+                <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50 flex items-center justify-center p-8">
+                    <div className="text-center">
+                        <div className="w-16 h-16 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500 rounded-lg mx-auto mb-6 flex items-center justify-center">
+                            <FileText className="w-8 h-8 text-white" />
+                        </div>
+                        <h3 className="text-xl font-semibold text-slate-800 mb-2">
+                            Loading Tests
+                        </h3>
+                        <p className="text-slate-600 mb-6">
+                            Fetching your organization's tests...
+                        </p>
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
+                    </div>
+                </div>
+                <Footer />
+            </>
         );
+    }
+
+    // Show unauthenticated component if no user
+    if (!user && !isLoading) {
+        return <UnauthenticatedComponent />;
+    }
+
+    // Check if user is unauthorized
+    if (user && !['HR', 'SeniorHR', 'OrgAdmin'].includes(user.role)) {
+        return <UnauthorizedComponent />;
     }
 
     return (
         <>
             <Navbar />
             <Toaster />
-            <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 py-6 md:py-8">
-                <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
-                    {/* Header */}
-                    <div className="mb-6 md:mb-8">
-                        <div className="bg-white rounded-2xl p-4 md:p-6 shadow-lg border border-gray-200">
-                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                                <div>
-                                    <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-gray-900 mb-1 md:mb-2">
+            <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 pb-4">
+
+                {/* Header - Consistent with Other Pages */}
+                <div className="bg-white border-b border-gray-200 shadow-sm relative overflow-hidden mb-4">
+                    <div className="absolute inset-0 bg-gradient-to-r from-blue-50 to-indigo-50 opacity-50"></div>
+                    <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                        <div className="flex items-center gap-4 mb-4">
+                            <Link
+                                href="/dashboard"
+                                className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-all duration-200 font-medium group"
+                            >
+                                <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+                                Back to Dashboard
+                            </Link>
+                        </div>
+
+                        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                            <div className="flex-1">
+                                <div className="flex items-center gap-3 mb-3">
+                                    <div className="p-2 bg-indigo-100 rounded-lg shadow-sm">
+                                        <FileText className="w-6 h-6 text-indigo-600" />
+                                    </div>
+                                    <span className="text-gray-700 font-semibold text-lg bg-white px-3 py-1 rounded-full border">
                                         Test Library
-                                    </h1>
-                                    <p className="text-sm md:text-base text-gray-600">
-                                        Manage and organize your assessment tests
-                                    </p>
+                                    </span>
                                 </div>
+
+                                <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+                                    Assessment Tests
+                                </h1>
+
+                                <div className="flex flex-wrap items-center gap-4 text-gray-600">
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <FileText className="w-4 h-4" />
+                                        <span className="text-sm font-medium">{tests.length} Total Tests</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <Play className="w-4 h-4" />
+                                        <span className="text-sm font-medium">{tests.filter(t => t.is_active).length} Active</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <UserCheck className="w-4 h-4" />
+                                        <span className="text-sm font-medium">{tests.filter(t => hasEditAccess(t)).length} Can Edit</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col gap-3">
                                 <button
                                     onClick={() => router.push('/organization/create-test')}
-                                    className="cursor-pointer flex items-center justify-center gap-2 px-4 md:px-6 py-2 md:py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 active:bg-indigo-800 transition-all duration-200 shadow-lg hover:shadow-xl text-sm md:text-base whitespace-nowrap"
+                                    className="cursor-pointer flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-lg hover:shadow-xl"
                                 >
-                                    <Plus className="w-4 md:w-5 h-4 md:h-5" />
-                                    <span className="hidden sm:inline">Create New Test</span>
-                                    <span className="sm:hidden">Create</span>
+                                    <Plus className="w-5 h-5" />
+                                    Create New Test
                                 </button>
+                                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-green-200 bg-green-50 text-green-700 shadow-sm">
+                                    <Users className="w-4 h-4" />
+                                    <span className="font-semibold text-sm">
+                                        {tests.reduce((sum, test) => sum + (test.assignment_count || 0), 0)} Assignments
+                                    </span>
+                                </div>
                             </div>
                         </div>
                     </div>
-
+                </div>
+                <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
                     {/* Stats Cards */}
                     <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6 mb-6 md:mb-8">
                         <div className="bg-white rounded-2xl p-3 md:p-6 shadow-lg border border-gray-200 hover:shadow-xl transition-shadow">
@@ -456,14 +594,7 @@ export default function TestsPage() {
 
                                                     {userHasEditAccess && (
                                                         <>
-                                                            <button
-                                                                onClick={() => router.push(`/organization/create-test?edit=${test.id}`)}
-                                                                className="cursor-pointer flex items-center gap-1 md:gap-2 px-3 md:px-4 py-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 active:bg-blue-100 rounded-lg transition-all text-xs md:text-sm font-medium group"
-                                                                title="Edit Test"
-                                                            >
-                                                                <Edit className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                                                                <span className="hidden md:inline">Edit</span>
-                                                            </button>
+
 
                                                             {test.is_active ? (
                                                                 <button
@@ -589,15 +720,6 @@ export default function TestsPage() {
 
                                                             {userHasEditAccess && (
                                                                 <>
-                                                                    <button
-                                                                        onClick={() => router.push(`/organization/create-test?edit=${test.id}`)}
-                                                                        className="cursor-pointer flex-1 min-w-[80px] flex items-center justify-center gap-1.5 px-3 py-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 active:bg-blue-100 rounded-lg transition-all text-xs font-medium group"
-                                                                        title="Edit Test"
-                                                                    >
-                                                                        <Edit className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                                                                        <span>Edit</span>
-                                                                    </button>
-
                                                                     {test.is_active ? (
                                                                         <button
                                                                             onClick={() => openConfirmationModal(

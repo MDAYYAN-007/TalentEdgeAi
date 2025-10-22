@@ -2,18 +2,18 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { jwtDecode } from 'jwt-decode';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { getUserApplications } from '@/actions/applications/getUserApplications';
 import {
     Search, Filter, Calendar, MapPin, Building, Clock,
     CheckCircle, XCircle, Clock4, AlertCircle, Eye,
-    FileText, TrendingUp, User, Briefcase, Star, Download,Video,
-    Zap
+    FileText, TrendingUp, User, Briefcase, Star, Download, Video,
+    Zap, ArrowLeft
 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import Link from 'next/link';
+import { getCurrentUser } from '@/actions/auth/auth-utils';
 
 export default function ApplicationsPage() {
     const router = useRouter();
@@ -25,23 +25,29 @@ export default function ApplicationsPage() {
     const [user, setUser] = useState(null);
 
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        if (!token) {
-            toast.error('Please sign in to view your applications');
-            router.push('/signin');
-            return;
-        }
+        const fetchUserAndApplications = async () => {
+            try {
+                const currentUser = await getCurrentUser();
 
-        try {
-            const decoded = jwtDecode(token);
-            setUser(decoded);
-            fetchApplications(decoded.id);
-        } catch (error) {
-            console.error('Error decoding token:', error);
-            router.push('/signin');
-        }
+                if (!currentUser) {
+                    toast.error('Please sign in to view your applications');
+                    router.push('/signin');
+                    return;
+                }
+
+                setUser(currentUser);
+                await fetchApplications(currentUser.id);
+            } catch (error) {
+                console.error('Error fetching user:', error);
+                toast.error('Please sign in to view your applications');
+                router.push('/signin');
+            }
+        };
+
+        fetchUserAndApplications();
     }, [router]);
 
+    // UPDATE the function to handle user parameter properly:
     const fetchApplications = async (userId) => {
         try {
             const result = await getUserApplications(userId);
@@ -145,6 +151,50 @@ export default function ApplicationsPage() {
             : 0
     };
 
+    // Add these components before the loading check:
+
+    // Unauthenticated Component
+    const UnauthenticatedComponent = () => (
+        <>
+            <Navbar />
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50">
+                <div className="max-w-md w-full">
+                    <div className="relative">
+                        <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl blur-2xl opacity-20"></div>
+                        <div className="relative bg-white/80 backdrop-blur-xl p-8 sm:p-10 rounded-3xl shadow-2xl border border-white/20 text-center space-y-6">
+                            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg">
+                                <FileText className="w-10 h-10 text-white" />
+                            </div>
+                            <div>
+                                <h1 className="text-3xl font-bold text-slate-900 mb-2">
+                                    Authentication Required
+                                </h1>
+                                <p className="text-slate-600">
+                                    You need to be signed in to view your applications.
+                                </p>
+                            </div>
+                            <div className="flex flex-col gap-3">
+                                <button
+                                    onClick={() => router.push('/signin')}
+                                    className="w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all"
+                                >
+                                    Sign In
+                                </button>
+                                <button
+                                    onClick={() => router.push('/')}
+                                    className="w-full px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-all"
+                                >
+                                    Go Home
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <Footer />
+        </>
+    );
+
     if (isLoading) {
         return (
             <>
@@ -164,32 +214,71 @@ export default function ApplicationsPage() {
         <>
             <Toaster />
             <Navbar />
-            <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 py-8">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    {/* Header */}
-                    <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 mb-8">
-                        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-                            <div>
-                                <h1 className="text-3xl md:text-4xl font-bold text-slate-900 mb-2">
-                                    My Applications
+            <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50 pb-8">
+                <div className="bg-white border-b border-gray-200 shadow-sm relative overflow-hidden mb-4">
+                    <div className="absolute inset-0 bg-gradient-to-r from-blue-50 to-indigo-50 opacity-50"></div>
+                    <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                        <div className="flex items-center gap-4 mb-4">
+                            <Link
+                                href="/dashboard"
+                                className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-all duration-200 font-medium group cursor-pointer"
+                            >
+                                <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+                                Back to Dashboard
+                            </Link>
+                        </div>
+
+                        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                            <div className="flex-1">
+                                <div className="flex items-center gap-3 mb-3">
+                                    <div className="p-2 bg-indigo-100 rounded-lg shadow-sm">
+                                        <FileText className="w-6 h-6 text-indigo-600" />
+                                    </div>
+                                    <span className="text-gray-700 font-semibold text-lg bg-white px-3 py-1 rounded-full border">
+                                        My Applications
+                                    </span>
+                                </div>
+
+                                <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+                                    Job Applications
                                 </h1>
-                                <p className="text-slate-600">
-                                    Track and manage all your job applications in one place
-                                </p>
+
+                                <div className="flex flex-wrap items-center gap-4 text-gray-600">
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <FileText className="w-4 h-4" />
+                                        <span className="text-sm font-medium">{applications.length} Total Applications</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <TrendingUp className="w-4 h-4" />
+                                        <span className="text-sm font-medium">{stats.averageScore}% Avg Match Score</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <CheckCircle className="w-4 h-4 text-green-500" />
+                                        <span className="text-sm font-medium">{(applications.length - stats.submitted) || 0} Shortlisted</span>
+                                    </div>
+                                </div>
                             </div>
-                            <div className="flex items-center gap-4">
+
+                            <div className="flex flex-col gap-3">
                                 <Link
                                     href="/jobs"
-                                    className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all duration-200 cursor-pointer active:scale-95"
+                                    className="cursor-pointer flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-lg hover:shadow-xl"
                                 >
                                     <Briefcase className="w-5 h-5" />
                                     Find More Jobs
                                 </Link>
+                                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-green-200 bg-green-50 text-green-700 shadow-sm">
+                                    <User className="w-4 h-4" />
+                                    <span className="font-semibold text-sm">
+                                        {stats.hired} Hired Positions
+                                    </span>
+                                </div>
                             </div>
                         </div>
                     </div>
+                </div>
 
-                    {/* Stats Overview */}
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     {/* Stats Overview */}
                     <div className="grid grid-cols-2 md:grid-cols-8 gap-4 mb-8">
                         <div className="bg-white rounded-xl shadow-md border border-slate-200 p-4 text-center">

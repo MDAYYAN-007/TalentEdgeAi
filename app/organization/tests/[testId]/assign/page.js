@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { jwtDecode } from 'jwt-decode';
+import { getCurrentUser } from '@/actions/auth/auth-utils';
 import {
     ArrowLeft, Users, Search, Filter, X, Calendar,
     Eye, CheckCircle, Clock, FileText, Star,
@@ -53,50 +53,62 @@ export default function AssignTestPage() {
     const [isFiltersOpen, setIsFiltersOpen] = useState(false);
 
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        if (!token) {
-            router.push('/signin');
-            return;
-        }
+        const fetchUserAndData = async () => {
+            try {
+                const currentUser = await getCurrentUser();
 
-        try {
-            const decoded = jwtDecode(token);
-            const userData = {
-                name: decoded.name || 'User',
-                email: decoded.email,
-                role: decoded.role || 'User',
-                id: decoded.id,
-                orgId: decoded.orgId
-            };
-            setUser(userData);
+                if (!currentUser) {
+                    setUser(null);
+                    setIsLoading(false);
+                    return;
+                }
 
-            if (decoded.role && !['HR', 'SeniorHR', 'OrgAdmin'].includes(decoded.role)) {
-                router.push('/dashboard');
-                return;
+                setUser(currentUser);
+
+                // Check authorization - ONLY HR, SeniorHR, OrgAdmin can access
+                if (!['HR', 'SeniorHR', 'OrgAdmin'].includes(currentUser.role)) {
+                    setIsLoading(false);
+                    return;
+                }
+
+                // If authorized, fetch the data
+                if (currentUser.orgId && testId) {
+                    await fetchTestAndApplicants(currentUser);
+                } else {
+                    setIsLoading(false);
+                }
+            } catch (error) {
+                console.error('Error fetching user:', error);
+                setUser(null);
+                setIsLoading(false);
             }
-        } catch (err) {
-            console.error('Invalid token', err);
-            localStorage.removeItem('token');
-            router.push('/signin');
-        }
-    }, [router]);
+        };
 
-    useEffect(() => {
-        if (user?.orgId && testId) {
-            fetchTestAndApplicants();
-        }
-    }, [user, testId]);
+        fetchUserAndData();
+    }, [testId]);
 
-    const fetchTestAndApplicants = async () => {
+    const fetchTestAndApplicants = async (currentUser = user) => {
         setIsLoading(true);
         try {
-            const testResult = await getTestDetails(testId, { orgId: user.orgId, userId: user.id });
+            const userToUse = currentUser || user;
+            if (!userToUse?.orgId) {
+                throw new Error('User organization not found');
+            }
+
+            const testResult = await getTestDetails(testId, {
+                orgId: userToUse.orgId,
+                userId: userToUse.id
+            });
             if (!testResult.success) {
                 throw new Error(testResult.message);
             }
             setTest(testResult.test);
 
-            const applicantsResult = await getApplicantsForTestAssignment(user.orgId, testId, user.id);
+            const applicantsResult = await getApplicantsForTestAssignment(
+                userToUse.orgId,
+                testId,
+                userToUse.id
+            );
             if (!applicantsResult.success) {
                 throw new Error(applicantsResult.message);
             }
@@ -283,31 +295,139 @@ export default function AssignTestPage() {
         }
     };
 
-    if (!user || isLoading) {
-        return (
-            <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
-                <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-indigo-600"></div>
+    // Unauthenticated Component
+    const UnauthenticatedComponent = () => (
+        <>
+            <Navbar />
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50">
+                <div className="max-w-md w-full">
+                    <div className="relative">
+                        <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl blur-2xl opacity-20"></div>
+                        <div className="relative bg-white/80 backdrop-blur-xl p-8 sm:p-10 rounded-3xl shadow-2xl border border-white/20 text-center space-y-6">
+                            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg">
+                                <Users className="w-10 h-10 text-white" />
+                            </div>
+                            <div>
+                                <h1 className="text-3xl font-bold text-slate-900 mb-2">
+                                    Authentication Required
+                                </h1>
+                                <p className="text-slate-600">
+                                    You need to be signed in to assign tests.
+                                </p>
+                            </div>
+                            <div className="flex flex-col gap-3">
+                                <button
+                                    onClick={() => router.push('/signin')}
+                                    className="w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all"
+                                >
+                                    Sign In
+                                </button>
+                                <button
+                                    onClick={() => router.push('/')}
+                                    className="w-full px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-all"
+                                >
+                                    Go Home
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
+            <Footer />
+        </>
+    );
+
+    // Unauthorized Component
+    const UnauthorizedComponent = () => (
+        <>
+            <Navbar />
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50">
+                <div className="max-w-md w-full">
+                    <div className="relative">
+                        <div className="absolute inset-0 bg-gradient-to-r from-red-600 to-orange-600 rounded-3xl blur-2xl opacity-20"></div>
+                        <div className="relative bg-white/80 backdrop-blur-xl p-8 sm:p-10 rounded-3xl shadow-2xl border border-white/20 text-center space-y-6">
+                            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-red-500 to-orange-600 shadow-lg">
+                                <AlertCircle className="w-10 h-10 text-white" />
+                            </div>
+                            <div>
+                                <h1 className="text-3xl font-bold text-slate-900 mb-2">
+                                    Access Denied
+                                </h1>
+                                <p className="text-slate-600">
+                                    Only <strong>HR</strong>, <strong>SeniorHR</strong>, and <strong>OrgAdmin</strong> can assign tests.
+                                </p>
+                            </div>
+                            <div className="pt-2">
+                                <button
+                                    onClick={() => router.push('/dashboard')}
+                                    className="cursor-pointer w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all"
+                                >
+                                    Go to Dashboard
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <Footer />
+        </>
+    );
+
+    if (isLoading) {
+        return (
+            <>
+                <Navbar />
+                <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50 flex items-center justify-center p-8">
+                    <div className="text-center">
+                        <div className="w-16 h-16 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500 rounded-lg mx-auto mb-6 flex items-center justify-center">
+                            <Users className="w-8 h-8 text-white" />
+                        </div>
+                        <h3 className="text-xl font-semibold text-slate-800 mb-2">
+                            Loading Test Assignment
+                        </h3>
+                        <p className="text-slate-600 mb-6">
+                            Preparing test assignment interface...
+                        </p>
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
+                    </div>
+                </div>
+                <Footer />
+            </>
         );
     }
 
-    if (!test) {
+    // Show unauthenticated component if no user
+    if (!user && !isLoading) {
+        return <UnauthenticatedComponent />;
+    }
+
+    // Check if user is unauthorized - FIXED THIS LOGIC
+    if (user && !['HR', 'SeniorHR', 'OrgAdmin'].includes(user.role)) {
+        return <UnauthorizedComponent />;
+    }
+
+    // If user is authorized but no test data loaded
+    if (!test && user && ['HR', 'SeniorHR', 'OrgAdmin'].includes(user.role)) {
         return (
-            <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
-                <div className="text-center">
-                    <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <X className="w-8 h-8 text-red-500" />
+            <>
+                <Navbar />
+                <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
+                    <div className="text-center">
+                        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <X className="w-8 h-8 text-red-500" />
+                        </div>
+                        <h2 className="text-2xl font-bold text-gray-900 mb-2">Test Not Found</h2>
+                        <p className="text-gray-600 mb-6">The test you're looking for doesn't exist or you don't have access to it.</p>
+                        <button
+                            onClick={() => router.push('/organization/tests')}
+                            className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
+                        >
+                            Back to Tests
+                        </button>
                     </div>
-                    <h2 className="text-2xl font-bold text-gray-900 mb-2">Test Not Found</h2>
-                    <p className="text-gray-600 mb-6">The test you're looking for doesn't exist or you don't have access to it.</p>
-                    <button
-                        onClick={() => router.push('/organization/tests')}
-                        className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
-                    >
-                        Back to Tests
-                    </button>
                 </div>
-            </div>
+                <Footer />
+            </>
         );
     }
 
@@ -316,64 +436,79 @@ export default function AssignTestPage() {
             <Navbar />
             <Toaster position="top-right" />
 
-            <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 py-4 sm:py-8">
-                <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
-                    {/* Header */}
-                    <div className="mb-6 sm:mb-8">
-                        <div className="flex items-center gap-3 mb-4 sm:mb-6">
+            <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 pb-4 sm:pb-8">
+                {/* Header - Consistent with Other Pages */}
+                <div className="bg-white border-b border-gray-200 shadow-sm relative overflow-hidden mb-4">
+                    <div className="absolute inset-0 bg-gradient-to-r from-blue-50 to-indigo-50 opacity-50"></div>
+                    <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                        <div className="flex items-center gap-4 mb-4">
                             <button
                                 onClick={() => router.push(`/organization/tests/${testId}`)}
-                                className="cursor-pointer flex items-center gap-2 text-gray-600 hover:text-indigo-600 hover:bg-indigo-100 rounded px-2 py-1 transition-colors text-sm sm:text-base"
+                                className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-all duration-200 font-medium group cursor-pointer"
                             >
-                                <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+                                <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
                                 Back to Test Details
                             </button>
                         </div>
 
-                        <div className="bg-white rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-lg border border-gray-200">
-                            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 sm:gap-6">
-                                <div className="flex-1">
-                                    <div className="flex items-start gap-3 mb-4">
-                                        <div className="p-2 sm:p-3 bg-blue-100 rounded-lg sm:rounded-xl flex-shrink-0">
-                                            <Users className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
-                                        </div>
-                                        <div className="min-w-0">
-                                            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 mb-1 sm:mb-2 break-words">
-                                                Assign Test: {test.title}
-                                            </h1>
-                                            <p className="text-gray-600 text-sm sm:text-base">
-                                                Select applicant, configure test settings and assign test.
-                                            </p>
-                                        </div>
+                        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                            <div className="flex-1">
+                                <div className="flex items-center gap-3 mb-3">
+                                    <div className="p-2 bg-blue-100 rounded-lg shadow-sm">
+                                        <Users className="w-6 h-6 text-blue-600" />
                                     </div>
-
-                                    <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-gray-600 text-xs sm:text-sm">
-                                        <div className="flex items-center gap-1 sm:gap-2">
-                                            <FileText className="w-3 h-3 sm:w-4 sm:h-4" />
-                                            <span>{test.question_count} questions</span>
-                                        </div>
-                                        <div className="flex items-center gap-1 sm:gap-2">
-                                            <Clock className="w-3 h-3 sm:w-4 sm:h-4" />
-                                            <span>{test.duration_minutes} minutes</span>
-                                        </div>
-                                        <div className="flex items-center gap-1 sm:gap-2">
-                                            <Star className="w-3 h-3 sm:w-4 sm:h-4" />
-                                            <span>{test.passing_marks}% passing score</span>
-                                        </div>
-                                    </div>
+                                    <span className="text-gray-700 font-semibold text-lg bg-white px-3 py-1 rounded-full border">
+                                        Assign Test
+                                    </span>
                                 </div>
 
-                                <div className="flex items-center gap-3 bg-blue-50 rounded-lg sm:rounded-xl p-3 sm:p-4 self-start">
-                                    <div className="text-center sm:text-right">
-                                        <div className="text-xl sm:text-2xl font-bold text-blue-600">
-                                            {selectedApplicants.size}
-                                        </div>
-                                        <div className="text-xs sm:text-sm text-gray-600 whitespace-nowrap">Applicants Selected</div>
+                                <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+                                    Assign: {test.title}
+                                </h1>
+
+                                <div className="flex flex-wrap items-center gap-4 text-gray-600">
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <FileText className="w-4 h-4" />
+                                        <span className="text-sm font-medium">{test.question_count} Questions</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <Clock className="w-4 h-4" />
+                                        <span className="text-sm font-medium">{test.duration_minutes} Minutes</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <Star className="w-4 h-4" />
+                                        <span className="text-sm font-medium">{test.passing_marks}% Passing</span>
+                                    </div>
+                                    <div className={`flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm ${test.is_active ? 'border-green-200' : 'border-gray-200'}`}>
+                                        <div className={`w-2 h-2 rounded-full ${test.is_active ? 'bg-green-500' : 'bg-gray-400'}`}></div>
+                                        <span className="text-sm font-medium">{test.is_active ? 'Active' : 'Inactive'}</span>
                                     </div>
                                 </div>
                             </div>
+
+                            <div className="flex flex-col gap-3">
+                                <div className="inline-flex items-center gap-2 px-4 py-3 rounded-lg border-2 border-blue-200 bg-blue-50 text-blue-700 shadow-sm">
+                                    <UserCheck className="w-5 h-5" />
+                                    <span className="font-semibold text-lg">
+                                        {selectedApplicants.size} Selected
+                                    </span>
+                                </div>
+                                {test.is_active ? (
+                                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-green-200 bg-green-50 text-green-700">
+                                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                        <span className="font-semibold text-sm">Test is Active</span>
+                                    </div>
+                                ) : (
+                                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-gray-200 bg-gray-50 text-gray-700">
+                                        <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                                        <span className="font-semibold text-sm">Test is Inactive</span>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
+                </div>
+                <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
 
                     {/* Assignment Settings - Always Visible */}
                     {applicants.length > 0 && (

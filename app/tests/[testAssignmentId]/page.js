@@ -1,8 +1,9 @@
 'use client';
 
+import { evaluateTestAttempt } from '@/actions/tests/evaluateTestAttempt';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { jwtDecode } from 'jwt-decode';
+import { getCurrentUser } from '@/actions/auth/auth-utils';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { getApplicantTestDetails } from '@/actions/tests/getApplicantTestDetails';
@@ -26,7 +27,6 @@ export default function TakeTestPage() {
     const router = useRouter();
     const testAssignmentId = params.testAssignmentId;
 
-    // Test state
     const [testAssignment, setTestAssignment] = useState(null);
     const [testDetails, setTestDetails] = useState(null);
     const [questions, setQuestions] = useState([]);
@@ -42,8 +42,8 @@ export default function TakeTestPage() {
     const [user, setUser] = useState(null);
     const [showInstructions, setShowInstructions] = useState(true);
     const [showSubmitModal, setShowSubmitModal] = useState(false);
+    const [testStatus, setTestStatus] = useState('available');
 
-    // Proctoring state
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [violationCount, setViolationCount] = useState(0);
     const [showViolationModal, setShowViolationModal] = useState(false);
@@ -51,6 +51,15 @@ export default function TakeTestPage() {
     const [mediaStream, setMediaStream] = useState(null);
     const [isStartingTest, setIsStartingTest] = useState(false);
     const [proctoringWarnings, setProctoringWarnings] = useState([]);
+    const [proctoringData, setProctoringData] = useState({
+        violations: [],
+        cameraStatus: [],
+        fullscreenStatus: [],
+        tabSwitches: [],
+        startTime: null,
+        endTime: null
+    });
+    const [violations, setViolations] = useState([]);
 
     const proctoringInitializedRef = useRef(false);
     const cameraCheckIntervalRef = useRef(null);
@@ -58,31 +67,38 @@ export default function TakeTestPage() {
     const timerRef = useRef(null);
     const autoSaveTimeoutRef = useRef(null);
 
-    // Update ref when state changes
     useEffect(() => {
         violationCountRef.current = violationCount;
     }, [violationCount]);
 
-    // Authentication and initial data loading
+    // REPLACE the empty useEffect with this:
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        if (!token) {
-            toast.error('Please sign in to take the test');
-            router.push('/signin');
-            return;
-        }
+        const checkAuthAndLoadTest = async () => {
+            try {
+                // Check authentication using new cookie-based system
+                const currentUser = await getCurrentUser();
 
-        try {
-            const decoded = jwtDecode(token);
-            setUser(decoded);
-            fetchTestData(testAssignmentId, decoded.id);
-        } catch (error) {
-            console.error('Error decoding token:', error);
-            router.push('/signin');
-        }
+                if (!currentUser) {
+                    // User not authenticated - show beautiful unauthorized component
+                    setIsLoading(false);
+                    return;
+                }
+
+                setUser(currentUser);
+
+                // Now load test data with authenticated user
+                if (testAssignmentId) {
+                    await fetchTestData(testAssignmentId, currentUser.id);
+                }
+            } catch (error) {
+                console.error('Authentication error:', error);
+                setIsLoading(false);
+            }
+        };
+
+        checkAuthAndLoadTest();
     }, [testAssignmentId, router]);
 
-    // Proctoring setup
     useEffect(() => {
         if (isTestStarted && !proctoringInitializedRef.current) {
             initializeProctoring();
@@ -93,7 +109,6 @@ export default function TakeTestPage() {
         };
     }, [isTestStarted]);
 
-    // Camera monitoring
     useEffect(() => {
         if (isTestStarted && testAssignment?.is_proctored) {
             cameraCheckIntervalRef.current = setInterval(() => {
@@ -108,15 +123,11 @@ export default function TakeTestPage() {
         };
     }, [isTestStarted, testAssignment]);
 
-    // Timer management
-    // Timer management
     useEffect(() => {
         if (isTestStarted && timeLeft > 0) {
             timerRef.current = setInterval(() => {
                 setTimeLeft(prev => {
                     if (prev <= 1) {
-                        // Don't call handleAutoSubmit directly here
-                        // Instead, set timeLeft to 0 and let the effect handle it
                         return 0;
                     }
                     return prev - 1;
@@ -131,14 +142,12 @@ export default function TakeTestPage() {
         };
     }, [isTestStarted, timeLeft]);
 
-    // Separate useEffect to handle auto-submit when time reaches 0
     useEffect(() => {
         if (isTestStarted && timeLeft === 0 && !isTestCompleted) {
             handleAutoSubmit();
         }
     }, [isTestStarted, timeLeft, isTestCompleted]);
 
-    // Auto-save responses when they change
     useEffect(() => {
         if (isTestStarted && testAttemptId) {
             // Clear existing timeout
@@ -159,6 +168,53 @@ export default function TakeTestPage() {
         };
     }, [responses, isTestStarted, testAttemptId]);
 
+    useEffect(() => {
+        const handleBeforeUnload = (e) => {
+            if (isTestStarted && !isTestCompleted && !isSubmitting) {
+                // Prevent immediate refresh and show warning
+                e.preventDefault();
+                e.returnValue = 'Your test will be submitted if you leave this page. Are you sure?';
+                return e.returnValue;
+            }
+        };
+
+        const handleUnload = async () => {
+            if (isTestStarted && !isTestCompleted && !isSubmitting && testAttemptId) {
+                // Submit test when user leaves the page using existing server actions
+                try {
+                    // Submit all responses
+                    const submissionPromises = questions.map(question => {
+                        const response = responses[question.id] || {
+                            answer: null,
+                            selectedOptions: null,
+                            questionType: question.question_type,
+                            timestamp: new Date().toISOString()
+                        };
+                        return submitTestResponse(testAttemptId, question.id, response);
+                    });
+
+                    // Also submit the test attempt
+                    submissionPromises.push(submitTestAttempt(testAttemptId));
+
+                    await Promise.allSettled(submissionPromises);
+
+                } catch (error) {
+                    console.error('Error auto-submitting on refresh:', error);
+                }
+            }
+        };
+
+        if (isTestStarted && !isTestCompleted) {
+            window.addEventListener('beforeunload', handleBeforeUnload);
+            window.addEventListener('unload', handleUnload);
+        }
+
+        return () => {
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+            window.removeEventListener('unload', handleUnload);
+        };
+    }, [isTestStarted, isTestCompleted, isSubmitting, testAttemptId, responses]);
+
     const fetchTestData = async (assignmentId, userId) => {
         try {
             const assignmentResult = await getApplicantTestDetails(assignmentId, userId);
@@ -170,6 +226,10 @@ export default function TakeTestPage() {
 
             const assignment = assignmentResult.testAssignment;
             setTestAssignment(assignment);
+
+            // Set test status
+            setTestStatus(assignment.availability);
+            console.log('Test assignment availability:', assignment.availability);
 
             // Check test availability
             if (assignment.availability === 'not_started') {
@@ -195,13 +255,13 @@ export default function TakeTestPage() {
 
             if (assignment.availability === 'expired') {
                 toast.error('This test has expired');
-                router.push('/applications');
+                setIsLoading(false);
                 return;
             }
 
             if (assignment.availability === 'completed') {
-                toast.error('You have already completed this test');
-                router.push('/applications');
+                toast.success('🥳You have already completed this test');
+                setIsLoading(false);
                 return;
             }
 
@@ -215,7 +275,7 @@ export default function TakeTestPage() {
             setTestDetails(questionsResult.test);
             setQuestions(questionsResult.questions || []);
 
-            // FIX: Use test duration in minutes instead of assignment end time
+            // Use test duration in minutes instead of assignment end time
             const timeLeftSeconds = questionsResult.test.duration_minutes * 60;
             setTimeLeft(timeLeftSeconds);
 
@@ -228,7 +288,6 @@ export default function TakeTestPage() {
         }
     };
 
-    // Proctoring functions
     const initializeProctoring = () => {
         if (proctoringInitializedRef.current) {
             return;
@@ -248,10 +307,15 @@ export default function TakeTestPage() {
             }
         };
 
-        // Tab switch handler
         const handleVisibilityChange = () => {
-            if (document.hidden) {
-                handleViolation('tab_switch', 'Switched tabs/windows');
+            if (document.hidden && isTestStarted) {
+                handleViolation('tab_switch', 'Tab switching detected - Please stay on the test page');
+
+                setTimeout(() => {
+                    if (document.hidden && isTestStarted && !isTestCompleted) {
+                        handleAutoSubmit(true);
+                    }
+                }, 30000);
             }
         };
 
@@ -323,6 +387,25 @@ export default function TakeTestPage() {
     };
 
     const cleanupProctoring = () => {
+        console.log('🧹 Cleaning up proctoring system...');
+
+        // Clear all intervals and timeouts
+        if (cameraCheckIntervalRef.current) {
+            clearInterval(cameraCheckIntervalRef.current);
+            cameraCheckIntervalRef.current = null;
+        }
+
+        if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+        }
+
+        if (autoSaveTimeoutRef.current) {
+            clearTimeout(autoSaveTimeoutRef.current);
+            autoSaveTimeoutRef.current = null;
+        }
+
+        // Remove all event listeners
         if (window._proctoringHandlers) {
             const {
                 handleFullscreenChange,
@@ -343,16 +426,27 @@ export default function TakeTestPage() {
             document.removeEventListener('keydown', preventKeyboardShortcuts);
 
             delete window._proctoringHandlers;
+            console.log('🗑️ Removed proctoring event listeners');
         }
 
         // Stop camera stream
         if (mediaStream) {
-            mediaStream.getTracks().forEach(track => track.stop());
+            console.log('📷 Stopping camera stream...');
+            mediaStream.getTracks().forEach(track => {
+                track.stop();
+                console.log(`🛑 Stopped track: ${track.kind}`);
+            });
             setMediaStream(null);
             setCameraAccess(false);
         }
 
+        // Reset proctoring state
         proctoringInitializedRef.current = false;
+        setViolations([]);
+        setViolationCount(0);
+        setProctoringWarnings([]);
+
+        console.log('✅ Proctoring cleanup completed');
     };
 
     const checkCameraStatus = async () => {
@@ -385,39 +479,108 @@ export default function TakeTestPage() {
         }
     };
 
-    const handleViolation = useCallback((type, message) => {
-        setViolationCount(prevCount => {
-            const newCount = prevCount + 1;
-            return newCount;
-        });
+    const VIOLATION_SCORES = {
+        camera_disabled: 5,
+        fullscreen_exit: 2,
+        tab_switch: 4,
+        copy_paste: 1,
+        right_click: 1,
+        keyboard_shortcut: 1,
+        function_key: 1,
+        default: 1
+    };
 
-        // Add to proctoring warnings with auto-remove
-        const warningId = Date.now();
-        setProctoringWarnings(prev => [...prev, {
-            id: warningId,
+    const handleViolation = useCallback((type, message) => {
+        if (isSubmitting || isTestCompleted || !isTestStarted) {
+            console.log('🚫 Violation ignored - test not active');
+            return;
+        }
+
+        const violation = {
+            id: Date.now(),
             type,
             message,
             timestamp: new Date().toISOString(),
             count: violationCountRef.current + 1
-        }]);
+        };
 
-        // Auto-remove warning after 5 seconds
+        setViolations(prev => [...prev, violation]);
+        setViolationCount(prev => prev + 1);
+
+        setProctoringWarnings(prev => [...prev, violation]);
+
         setTimeout(() => {
-            setProctoringWarnings(prev => prev.filter(warning => warning.id !== warningId));
+            setProctoringWarnings(prev => prev.filter(warning => warning.id !== violation.id));
         }, 5000);
+    }, [isSubmitting, isTestCompleted, isTestStarted, testAttemptId]);
 
-        // Save to database if test attempt exists
-        if (testAttemptId) {
-            updateProctoringViolation(testAttemptId, {
-                type,
-                message,
-                timestamp: new Date().toISOString(),
-                totalViolations: violationCountRef.current + 1
-            });
+    useEffect(() => {
+        if (isTestCompleted) {
+            console.log('🏁 Test completed - performing final cleanup');
+            cleanupProctoring();
+        }
+    }, [isTestCompleted]);
+
+    const storeProctoringData = async () => {
+        if (!testAttemptId || isTestCompleted) {
+            console.log('📊 Skipping proctoring data storage - test already completed');
+            return;
         }
 
-        // toast.error(`Violationsss: ${message}`);
-    }, [testAttemptId]);
+        // Calculate violation score
+        const violationScore = violations.reduce((total, violation) => {
+            const score = VIOLATION_SCORES[violation.type] || VIOLATION_SCORES.default;
+            return total + score;
+        }, 0);
+
+        const finalProctoringData = {
+            violations: violations,
+            cameraStatus: cameraAccess ? 'enabled' : 'disabled',
+            fullscreenEvents: isFullscreen ? 'maintained' : 'exited',
+            tabSwitches: violations.filter(v => v.type === 'tab_switch').length,
+            totalViolations: violations.length,
+            violationScore: violationScore,
+            startTime: proctoringData.startTime || new Date().toISOString(),
+            endTime: new Date().toISOString(),
+            cameraAccessHistory: cameraAccess ? ['enabled'] : ['disabled'],
+            fullscreenHistory: isFullscreen ? ['entered'] : ['exited'],
+            submissionContext: {
+                submittedAt: new Date().toISOString(),
+                wasFullscreen: isFullscreen,
+                wasCameraActive: cameraAccess,
+                isNormalSubmission: true
+            },
+            scoreBreakdown: {
+                camera_disabled: violations.filter(v => v.type === 'camera_disabled').length * VIOLATION_SCORES.camera_disabled,
+                fullscreen_exit: violations.filter(v => v.type === 'fullscreen_exit').length * VIOLATION_SCORES.fullscreen_exit,
+                tab_switch: violations.filter(v => v.type === 'tab_switch').length * VIOLATION_SCORES.tab_switch,
+                copy_paste: violations.filter(v => v.type === 'copy_paste').length * VIOLATION_SCORES.copy_paste,
+                right_click: violations.filter(v => v.type === 'right_click').length * VIOLATION_SCORES.right_click,
+                keyboard_shortcut: violations.filter(v => v.type === 'keyboard_shortcut').length * VIOLATION_SCORES.keyboard_shortcut,
+                function_key: violations.filter(v => v.type === 'function_key').length * VIOLATION_SCORES.function_key
+            }
+        };
+
+        console.log('📊 Final Proctoring Data:', {
+            totalViolations: violations.length,
+            violationScore: violationScore,
+            breakdown: finalProctoringData.scoreBreakdown
+        });
+
+        try {
+            await updateProctoringViolation(testAttemptId, finalProctoringData);
+            console.log('✅ Proctoring data stored successfully with score:', violationScore);
+        } catch (error) {
+            console.error('❌ Failed to store proctoring data:', error);
+        }
+    };
+
+    useEffect(() => {
+        return () => {
+            console.log('🧹 Component unmounting - cleaning up proctoring');
+            cleanupProctoring();
+        };
+    }, []);
 
     const requestFullscreen = async () => {
         try {
@@ -514,6 +677,11 @@ export default function TakeTestPage() {
             return;
         }
 
+        setProctoringData(prev => ({
+            ...prev,
+            startTime: new Date().toISOString()
+        }));
+
         setIsTestStarted(true);
         setShowInstructions(false);
         setIsStartingTest(false);
@@ -527,7 +695,6 @@ export default function TakeTestPage() {
         }
     };
 
-    // Test functions
     const formatTime = (seconds) => {
         const hours = Math.floor(seconds / 3600);
         const minutes = Math.floor((seconds % 3600) / 60);
@@ -616,71 +783,128 @@ export default function TakeTestPage() {
         }
     };
 
-    const submitAllResponses = async () => {
-        // Ensure all questions have at least a null response in the database
-        const allSubmissionPromises = questions.map(question => {
-            const response = responses[question.id] || {
-                answer: null,
-                selectedOptions: null,
-                questionType: question.question_type,
-                timestamp: new Date().toISOString()
-            };
-            return submitTestResponse(testAttemptId, question.id, response);
-        });
-
-        await Promise.allSettled(allSubmissionPromises);
-    };
-
-    const handleAutoSubmit = async () => {
-        if (isTestCompleted) return;
-
-        setIsSubmitting(true);
-
-        // Cleanup proctoring immediately when test ends
-        cleanupProctoring();
-
+    const submitAllResponses = async (isRefresh = false) => {
         try {
-            await submitAllResponses();
-            const result = await submitTestAttempt(testAttemptId);
+            // Ensure all questions have at least a null response in the database
+            const allSubmissionPromises = questions.map(question => {
+                const response = responses[question.id] || {
+                    answer: null,
+                    selectedOptions: null,
+                    questionType: question.question_type,
+                    timestamp: new Date().toISOString()
+                };
+                return submitTestResponse(testAttemptId, question.id, response);
+            });
 
-            if (result.success) {
-                setIsTestCompleted(true);
-                toast.success('Test submitted successfully!');
-            } else {
-                toast.error(result.message || 'Failed to submit test');
+            const results = await Promise.allSettled(allSubmissionPromises);
+
+            if (isRefresh) {
+                console.log('Auto-submitted responses due to page refresh');
             }
+
+            return results;
         } catch (error) {
-            toast.error('Error submitting test');
-        } finally {
-            setIsSubmitting(false);
+            console.error('Error submitting all responses:', error);
+            throw error;
         }
     };
+
     const handleSubmitTest = async () => {
         if (isSubmitting) return;
         setShowSubmitModal(true);
     };
 
-    const confirmSubmitTest = async () => {
-        setIsSubmitting(true);
-        setShowSubmitModal(false);
+    const handleAutoSubmit = async (isRefresh = false) => {
+        if (isTestCompleted) return;
 
-        // Cleanup proctoring when manually submitting
+        console.log('🤖 Auto-submitting test...');
+
+        if (!isRefresh) {
+            setIsSubmitting(true);
+        }
+
+        // Immediately disable proctoring
+        proctoringInitializedRef.current = false;
+
+        // Clean up proctoring system
         cleanupProctoring();
 
         try {
-            await submitAllResponses();
+            await storeProctoringData();
+            await submitAllResponses(isRefresh);
             const result = await submitTestAttempt(testAttemptId);
 
             if (result.success) {
+                const evaluationResult = await evaluateTestAttempt(testAttemptId);
+                console.log('Auto-submission evaluation:', evaluationResult);
+
+                if (!isRefresh) {
+                    setIsTestCompleted(true);
+                    toast.success('Test submitted and evaluated successfully!');
+                } else {
+                    console.log('Test auto-submitted due to page refresh');
+                }
+            } else {
+                if (!isRefresh) {
+                    toast.error(result.message || 'Failed to submit test');
+                }
+            }
+        } catch (error) {
+            if (!isRefresh) {
+                toast.error('Error submitting test');
+            }
+        } finally {
+            if (!isRefresh) {
+                setIsSubmitting(false);
+            }
+        }
+    };
+
+    const confirmSubmitTest = async () => {
+        console.log('🚀 Starting test submission process...');
+        setIsSubmitting(true);
+        setShowSubmitModal(false);
+
+        // Immediately disable proctoring to prevent new violations
+        proctoringInitializedRef.current = false;
+
+        // Clean up proctoring system first
+        console.log('🧹 Starting proctoring cleanup before submission...');
+        cleanupProctoring();
+
+        try {
+            console.log('💾 Storing proctoring data...');
+            await storeProctoringData();
+
+            console.log('📤 Submitting all responses...');
+            await submitAllResponses();
+
+            console.log('✅ Submitting test attempt...');
+            const result = await submitTestAttempt(testAttemptId);
+
+            console.log('📊 Submission result:', result);
+            if (result.success) {
+                console.log('🎯 Starting evaluation...');
+                const evaluationResult = await evaluateTestAttempt(testAttemptId);
+                console.log('📈 Evaluation result:', evaluationResult);
+
                 setIsTestCompleted(true);
-                toast.success('Test submitted successfully!');
+                setTestStatus('completed');
+                toast.success('Test submitted and evaluated successfully!');
+
+                // Final cleanup after successful submission
+                setTimeout(() => {
+                    cleanupProctoring();
+                }, 1000);
             } else {
                 toast.error(result.message || 'Failed to submit test');
             }
         } catch (error) {
+            console.error('❌ Error submitting test:', error);
             toast.error('Error submitting test');
         } finally {
             setIsSubmitting(false);
+            console.log('🏁 Submission process completed');
         }
     };
 
@@ -694,7 +918,6 @@ export default function TakeTestPage() {
         return 'not-answered';
     };
 
-    // Render question function
     const renderQuestion = (question) => {
         const response = responses[question.id] || {};
 
@@ -821,15 +1044,65 @@ export default function TakeTestPage() {
         }
     };
 
-    // Loading state
+    // Unauthenticated Component
+    const UnauthenticatedComponent = () => (
+        <>
+            <Navbar />
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50">
+                <div className="max-w-md w-full">
+                    <div className="relative">
+                        <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl blur-2xl opacity-20"></div>
+                        <div className="relative bg-white/80 backdrop-blur-xl p-8 sm:p-10 rounded-3xl shadow-2xl border border-white/20 text-center space-y-6">
+                            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg">
+                                <FileText className="w-10 h-10 text-white" />
+                            </div>
+                            <div>
+                                <h1 className="text-3xl font-bold text-slate-900 mb-2">
+                                    Sign In Required
+                                </h1>
+                                <p className="text-slate-600">
+                                    Please sign in to take this test.
+                                </p>
+                            </div>
+                            <div className="flex flex-col gap-3">
+                                <button
+                                    onClick={() => router.push('/signin')}
+                                    className="w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all"
+                                >
+                                    Sign In
+                                </button>
+                                <button
+                                    onClick={() => router.push('/')}
+                                    className="w-full px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-all"
+                                >
+                                    Go Home
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <Footer />
+        </>
+    );
+
     if (isLoading) {
         return (
             <>
                 <Navbar />
-                <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
+                <Toaster />
+                <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50 flex items-center justify-center p-8">
                     <div className="text-center">
-                        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-                        <p className="text-gray-600 text-lg">Loading test...</p>
+                        <div className="w-16 h-16 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500 rounded-lg mx-auto mb-6 flex items-center justify-center">
+                            <FileText className="w-8 h-8 text-white" />
+                        </div>
+                        <h3 className="text-xl font-semibold text-slate-800 mb-2">
+                            Loading Test
+                        </h3>
+                        <p className="text-slate-600 mb-6">
+                            Preparing your test environment...
+                        </p>
+                        <Loader2 className="animate-spin w-8 h-8 text-indigo-600 mx-auto" />
                     </div>
                 </div>
                 <Footer />
@@ -837,7 +1110,11 @@ export default function TakeTestPage() {
         );
     }
 
-    // Test hasn't started yet
+    // ADD THIS CHECK after the loading check:
+    if (!user && !isLoading) {
+        return <UnauthenticatedComponent />;
+    }
+
     if (!isTestStarted && testAssignment?.availability === 'not_started') {
         return (
             <>
@@ -885,8 +1162,7 @@ export default function TakeTestPage() {
         );
     }
 
-    // Test expired
-    if (!isTestStarted && testAssignment?.availability === 'expired') {
+    if (!isLoading && testStatus === 'expired') {
         return (
             <>
                 <Navbar />
@@ -900,52 +1176,10 @@ export default function TakeTestPage() {
                         <p className="text-gray-600 mb-6">
                             This test is no longer available. The test window has ended.
                         </p>
-                        <Link
-                            href="/applications"
-                            className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all duration-200 cursor-pointer"
-                        >
-                            <ArrowLeft className="w-5 h-5" />
-                            Back to Applications
-                        </Link>
-                    </div>
-                </div>
-                <Footer />
-            </>
-        );
-    }
-
-    // Test completed
-    if (isTestCompleted) {
-        return (
-            <>
-                <Navbar />
-                <Toaster />
-                <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
-                    <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4 text-center shadow-lg border border-gray-200">
-                        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <CheckCircle className="w-8 h-8 text-green-600" />
-                        </div>
-                        <h2 className="text-2xl font-bold text-gray-900 mb-4">Test Submitted Successfully!</h2>
-                        <p className="text-gray-600 mb-6">
-                            Thank you for completing the test. Your responses have been recorded.
-                        </p>
-                        <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
-                            <h4 className="font-semibold mb-2">Submission Details:</h4>
-                            <p className="text-sm text-gray-600">• Total Questions: {questions.length}</p>
-                            <p className="text-sm text-gray-600">• Questions Answered: {Object.keys(responses).filter(id => responses[id].answer || responses[id].selectedOptions).length}</p>
-                            <p className="text-sm text-gray-600">• Proctoring Violations: {violationCount}</p>
-                            <p className="text-sm text-green-600">• Camera & Proctoring: Disabled</p>
-                        </div>
                         <div className="space-y-3">
-                            <button
-                                onClick={() => console.log('Test responses:', responses, 'Violations:', violationCount)}
-                                className="w-full px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all duration-200 cursor-pointer"
-                            >
-                                View Submission Details (Console)
-                            </button>
                             <Link
                                 href="/applications"
-                                className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all duration-200 cursor-pointer"
+                                className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all duration-200 cursor-pointer"
                             >
                                 <ArrowLeft className="w-5 h-5" />
                                 Back to Applications
@@ -958,7 +1192,36 @@ export default function TakeTestPage() {
         );
     }
 
-    // Instructions screen
+    if (!isLoading && testStatus === 'completed') {
+        return (
+            <>
+                <Navbar />
+                <Toaster />
+                <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
+                    <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4 text-center shadow-lg border border-gray-200">
+                        <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <CheckCircle className="w-8 h-8 text-blue-600" />
+                        </div>
+                        <h2 className="text-2xl font-bold text-gray-900 mb-4">Test Already Completed</h2>
+                        <p className="text-gray-600 mb-6">
+                            You have already completed this test. You cannot retake it.
+                        </p>
+                        <div className="space-y-3">
+                            <Link
+                                href="/applications"
+                                className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all duration-200 cursor-pointer"
+                            >
+                                <ArrowLeft className="w-5 h-5" />
+                                Back to Applications
+                            </Link>
+                        </div>
+                    </div>
+                </div>
+                <Footer />
+            </>
+        );
+    }
+
     if (showInstructions && !isTestStarted && testAssignment?.availability === 'available') {
         const isProctored = testAssignment?.is_proctored;
         const isCameraRequired = testAssignment.proctoring_settings?.camera_required;
@@ -1123,12 +1386,10 @@ export default function TakeTestPage() {
         );
     }
 
-    // Main test interface
     const currentQuestion = questions[currentQuestionIndex];
 
     return (
         <>
-            <Navbar />
             <Toaster />
             <div className="min-h-screen bg-gray-50">
                 {/* Header Bar */}
@@ -1152,9 +1413,18 @@ export default function TakeTestPage() {
 
                                 {/* Violation Count */}
                                 {violationCount > 0 && (
-                                    <div className="flex items-center gap-2 bg-red-100 text-red-700 px-3 py-1 rounded-full text-sm font-semibold">
-                                        <AlertTriangle className="w-4 h-4" />
-                                        Violations: {violationCount}
+                                    <div className="flex items-center gap-4">
+                                        <div className="flex items-center gap-2 bg-red-100 text-red-700 px-3 py-1 rounded-full text-sm font-semibold">
+                                            <AlertTriangle className="w-4 h-4" />
+                                            Violations: {violationCount}
+                                        </div>
+                                        <div className="flex items-center gap-2 bg-orange-100 text-orange-700 px-3 py-1 rounded-full text-sm font-semibold">
+                                            <AlertTriangle className="w-4 h-4" />
+                                            Score: {violations.reduce((total, violation) => {
+                                                const score = VIOLATION_SCORES[violation.type] || VIOLATION_SCORES.default;
+                                                return total + score;
+                                            }, 0)}
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -1393,7 +1663,7 @@ export default function TakeTestPage() {
 
             {/* Submit Confirmation Modal */}
             {showSubmitModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-lg flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-2xl max-w-md w-full p-6 text-center">
                         <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
                             <Send className="w-8 h-8 text-blue-600" />
@@ -1403,9 +1673,16 @@ export default function TakeTestPage() {
                             Are you sure you want to submit the test?
                             You will not be able to make changes after submission.
                         </p>
+                        {/* In the submit confirmation modal */}
                         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
                             <p className="text-yellow-700 font-semibold">
                                 Proctoring Violations: {violationCount}
+                            </p>
+                            <p className="text-yellow-600 text-sm mt-1">
+                                Violation Score: {violations.reduce((total, violation) => {
+                                    const score = VIOLATION_SCORES[violation.type] || VIOLATION_SCORES.default;
+                                    return total + score;
+                                }, 0)}
                             </p>
                         </div>
                         <div className="grid grid-cols-2 gap-4">

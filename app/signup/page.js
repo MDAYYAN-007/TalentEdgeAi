@@ -3,10 +3,11 @@
 import Navbar from '../../components/Navbar';
 import Footer from '../../components/Footer';
 import { useState, useEffect } from 'react';
-import { signupUser } from '@/actions/auth/signup';
+import { getCurrentUser } from '@/actions/auth/auth-utils';
 import { useRouter } from 'next/navigation';
 import { AiOutlineEye, AiOutlineEyeInvisible } from 'react-icons/ai';
 import { CheckCircleIcon } from '@heroicons/react/20/solid';
+import { logout } from '@/actions/auth/logout';
 
 export default function SignUpPage() {
   const [email, setEmail] = useState('');
@@ -23,11 +24,20 @@ export default function SignUpPage() {
   const [isPageLoading, setIsPageLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      setIsLoggedIn(true);
-    }
-    setIsPageLoading(false);
+    const checkAuthStatus = async () => {
+      try {
+        const currentUser = await getCurrentUser();
+        if (currentUser) {
+          setIsLoggedIn(true);
+        }
+      } catch (error) {
+        console.error('Error checking auth status:', error);
+      } finally {
+        setIsPageLoading(false);
+      }
+    };
+
+    checkAuthStatus();
   }, []);
 
   const router = useRouter();
@@ -188,9 +198,15 @@ export default function SignUpPage() {
                     </a>
 
                     <button
-                      onClick={() => {
-                        localStorage.removeItem('token');
-                        window.location.reload();
+                      onClick={async () => {
+                        try {
+                          await logout();
+                          setIsLoggedIn(false);
+                          router.push('/signin');
+                        } catch (error) {
+                          console.error('Error signing out:', error);
+                          router.push('/signin');
+                        }
                       }}
                       className="w-full sm:w-auto cursor-pointer px-8 py-4 rounded-xl text-slate-700 font-semibold border-2 border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all duration-200 flex items-center justify-center gap-2"
                     >

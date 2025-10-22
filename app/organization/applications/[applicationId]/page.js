@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { jwtDecode } from 'jwt-decode';
+import { getCurrentUser } from '@/actions/auth/auth-utils';
 import {
     ArrowLeft, Calendar, MapPin, Building, User, Star,
     CheckCircle, XCircle, Clock, FileText, Zap, Video,
@@ -27,6 +27,9 @@ import { scheduleInterview } from '@/actions/interviews/scheduleInterview';
 import { getAvailableInterviewers } from '@/actions/interviews/getAvailableInterviewers';
 import { getInterviewsForApplication } from '@/actions/interviews/getInterviewsForApplication';
 import { updateInterviewStatus } from '@/actions/interviews/updateInterviewStatus';
+import { evaluateTestAttempt } from '@/actions/tests/evaluateTestAttempt';
+import { evaluateWithAI } from '@/actions/tests/evaluateWithAI';
+import { getTestAttemptId } from '@/actions/tests/getTestAttemptId';
 
 export default function RecruiterApplicationDetailsPage() {
     const router = useRouter();
@@ -106,6 +109,11 @@ export default function RecruiterApplicationDetailsPage() {
     });
     const [isRescheduling, setIsRescheduling] = useState(false);
 
+    const [isCompleteInterviewModalOpen, setIsCompleteInterviewModalOpen] = useState(false);
+    const [isCancelInterviewModalOpen, setIsCancelInterviewModalOpen] = useState(false);
+    const [selectedInterviewForAction, setSelectedInterviewForAction] = useState(null);
+    const [actionNotes, setActionNotes] = useState('');
+
     const interviewTypes = [
         { value: 'technical', label: 'Technical Interview' },
         { value: 'hr', label: 'HR Interview' },
@@ -123,37 +131,32 @@ export default function RecruiterApplicationDetailsPage() {
     ];
 
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        if (!token) {
-            router.push('/signin');
-            return;
-        }
+        const fetchUserAndCheckAuth = async () => {
+            try {
+                const currentUser = await getCurrentUser();
 
-        try {
-            const decoded = jwtDecode(token);
-            const userData = {
-                name: decoded.name || 'User',
-                email: decoded.email,
-                role: decoded.role || 'User',
-                id: decoded.id,
-                orgId: decoded.orgId
-            };
-            setUser(userData);
+                if (!currentUser) {
+                    // User is not authenticated - we'll handle this in the UI
+                    setIsLoading(false);
+                    return;
+                }
 
-            if (decoded.role === 'OrgAdmin') {
-                return;
+                setUser(currentUser);
+
+                // Check if user has the required role
+                if (currentUser.role && !['HR', 'SeniorHR', 'OrgAdmin'].includes(currentUser.role)) {
+                    router.push('/dashboard');
+                    return;
+                }
+
+            } catch (error) {
+                console.error('Error getting current user:', error);
+                // User is not authenticated - we'll handle this in the UI
+                setIsLoading(false);
             }
+        };
 
-            if (decoded.role && !['HR', 'SeniorHR', 'OrgAdmin'].includes(decoded.role)) {
-                router.push('/dashboard');
-                return;
-            }
-
-        } catch (err) {
-            console.error('Invalid token', err);
-            localStorage.removeItem('token');
-            router.push('/signin');
-        }
+        fetchUserAndCheckAuth();
     }, [router]);
 
     useEffect(() => {
@@ -213,6 +216,7 @@ export default function RecruiterApplicationDetailsPage() {
     };
 
     // Fetch test assignments for this application
+    // Fetch test assignments for this application
     const fetchTestAssignments = async () => {
         if (!applicationId) return;
 
@@ -220,7 +224,32 @@ export default function RecruiterApplicationDetailsPage() {
         try {
             const result = await getTestsForApplication(applicationId);
             if (result.success) {
-                setTestAssignments(result.tests || []);
+                // Fetch attempt details for each test assignment
+                const assignmentsWithAttempts = await Promise.all(
+                    (result.tests || []).map(async (assignment) => {
+                        try {
+                            const attemptResult = await getTestAttemptId(assignment.test_id, applicationId);
+                            if (attemptResult.success) {
+                                return {
+                                    ...assignment,
+                                    attempt_id: attemptResult.attempt.id,
+                                    isEvaluated: attemptResult.attempt.is_evaluated,
+                                    attempt_status: attemptResult.attempt.status,
+                                    total_score: attemptResult.attempt.total_score,
+                                    percentage: attemptResult.attempt.percentage,
+                                    is_passed: attemptResult.attempt.is_passed
+                                };
+                            }
+                            console.log('Assignment Result', assignment)
+                            return assignment;
+                        } catch (error) {
+                            console.error('Error fetching attempt for test:', assignment.test_id, error);
+                            return assignment;
+                        }
+                    })
+                );
+
+                setTestAssignments(assignmentsWithAttempts);
             } else {
                 console.error('Failed to fetch test assignments:', result.message);
                 setTestAssignments([]);
@@ -531,7 +560,6 @@ export default function RecruiterApplicationDetailsPage() {
         }
     };
 
-    // Interview related functions
     const handleScheduleInterview = () => {
         setIsInterviewModalOpen(true);
         setInterviewFormData({
@@ -710,7 +738,89 @@ export default function RecruiterApplicationDetailsPage() {
         return now > interviewTime && interview.status === 'scheduled';
     };
 
-    // Fetch interviewers when modal opens
+    // Add these handler functions
+    const handleCompleteInterview = (interview) => {
+        setSelectedInterviewForAction(interview);
+        setActionNotes('');
+        setIsCompleteInterviewModalOpen(true);
+    };
+
+    const handleCancelInterview = (interview) => {
+        setSelectedInterviewForAction(interview);
+        setActionNotes('');
+        setIsCancelInterviewModalOpen(true);
+    };
+
+    const confirmCompleteInterview = async () => {
+        if (!selectedInterviewForAction) return;
+
+        setIsUpdating(true);
+        try {
+            const authData = {
+                orgId: user.orgId,
+                userId: user.id
+            };
+
+            const result = await updateInterviewStatus(
+                authData,
+                selectedInterviewForAction.id,
+                'completed',
+                actionNotes || `Interview marked as completed by ${user.name}`
+            );
+
+            if (result.success) {
+                toast.success('Interview marked as completed');
+                await fetchInterviews();
+                await fetchStatusHistory();
+            } else {
+                toast.error(result.message || 'Failed to update interview status');
+            }
+        } catch (error) {
+            console.error('Error updating interview status:', error);
+            toast.error('Error updating interview status');
+        } finally {
+            setIsUpdating(false);
+            setIsCompleteInterviewModalOpen(false);
+            setSelectedInterviewForAction(null);
+            setActionNotes('');
+        }
+    };
+
+    const confirmCancelInterview = async () => {
+        if (!selectedInterviewForAction) return;
+
+        setIsUpdating(true);
+        try {
+            const authData = {
+                orgId: user.orgId,
+                userId: user.id
+            };
+
+            const result = await updateInterviewStatus(
+                authData,
+                selectedInterviewForAction.id,
+                'cancelled',
+                actionNotes || `Interview cancelled by ${user.name}`
+            );
+
+            if (result.success) {
+                toast.success('Interview cancelled');
+                await fetchInterviews();
+                await fetchStatusHistory();
+            } else {
+                toast.error(result.message || 'Failed to cancel interview');
+            }
+        } catch (error) {
+            console.error('Error cancelling interview:', error);
+            toast.error('Error cancelling interview');
+        } finally {
+            setIsUpdating(false);
+            setIsCancelInterviewModalOpen(false);
+            setSelectedInterviewForAction(null);
+            setActionNotes('');
+        }
+    };
+
     useEffect(() => {
         if (isInterviewModalOpen) {
             const fetchInterviewersData = async () => {
@@ -736,7 +846,6 @@ export default function RecruiterApplicationDetailsPage() {
         interviewer.email.toLowerCase().includes(searchInterviewerQuery.toLowerCase())
     );
 
-    // Helper function to check if test is already assigned
     const isTestAlreadyAssigned = (testId) => {
         return testAssignments.some(assignment =>
             assignment.test_id === testId &&
@@ -757,11 +866,6 @@ export default function RecruiterApplicationDetailsPage() {
     const handleDownloadReport = (testAssignment) => {
         console.log('Downloading test report:', testAssignment);
         toast.success('Test report download functionality will be implemented soon');
-    };
-
-    const handleContactCandidate = (testAssignment) => {
-        console.log('Contacting candidate about test:', testAssignment);
-        toast.success('Contact functionality will be implemented soon');
     };
 
     const handleViewTestResults = (testAssignment) => {
@@ -813,7 +917,9 @@ export default function RecruiterApplicationDetailsPage() {
     const getTestStatusColor = (status) => {
         const colors = {
             assigned: 'bg-blue-100 text-blue-800 border-blue-200',
-            attempted: 'bg-green-100 text-green-800 border-green-200',
+            attempted: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+            ready_for_evaluation: 'bg-orange-100 text-orange-800 border-orange-200',
+            evaluated: 'bg-green-100 text-green-800 border-green-200',
             expired: 'bg-red-100 text-red-800 border-red-200',
             cancelled: 'bg-gray-100 text-gray-800 border-gray-200'
         };
@@ -851,7 +957,6 @@ export default function RecruiterApplicationDetailsPage() {
         });
     };
 
-    // Format salary
     const formatSalary = (min, max, currency = 'INR') => {
         if (!min && !max) return 'Not specified';
 
@@ -866,7 +971,6 @@ export default function RecruiterApplicationDetailsPage() {
         return `Up to ${formatNumber(max)} ${currency}`;
     };
 
-    // Get available actions based on current status
     const getAvailableActions = () => {
         const currentStatus = application.status;
 
@@ -1080,7 +1184,7 @@ export default function RecruiterApplicationDetailsPage() {
         }
     };
 
-    if (!user || isLoading) {
+    if (isLoading) {
         return (
             <>
                 <Navbar />
@@ -1088,6 +1192,40 @@ export default function RecruiterApplicationDetailsPage() {
                     <div className="text-center">
                         <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-indigo-600 mx-auto mb-4"></div>
                         <p className="text-gray-600 text-lg">Loading application details...</p>
+                    </div>
+                </div>
+                <Footer />
+            </>
+        );
+    }
+
+    // Add this check for unauthenticated users
+    if (!user) {
+        return (
+            <>
+                <Navbar />
+                <Toaster />
+                <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
+                    <div className="text-center bg-white rounded-2xl shadow-xl border border-gray-200 p-8 max-w-md">
+                        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <XCircle className="w-8 h-8 text-red-500" />
+                        </div>
+                        <h2 className="text-2xl font-bold text-gray-900 mb-4">Authentication Required</h2>
+                        <p className="text-gray-600 mb-6">You need to be signed in to view application details.</p>
+                        <div className="flex flex-col gap-3">
+                            <Link
+                                href="/signin"
+                                className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+                            >
+                                Sign In
+                            </Link>
+                            <Link
+                                href="/"
+                                className="inline-flex items-center justify-center gap-2 px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg font-semibold hover:bg-gray-50 transition-all duration-200"
+                            >
+                                Go Home
+                            </Link>
+                        </div>
                     </div>
                 </div>
                 <Footer />
@@ -1157,6 +1295,63 @@ export default function RecruiterApplicationDetailsPage() {
     ];
 
     const TestAssignmentsSection = () => {
+        const [isEvaluating, setIsEvaluating] = useState(false);
+        const [evaluationResult, setEvaluationResult] = useState(null);
+        const [showEvaluationModal, setShowEvaluationModal] = useState(false);
+
+        // Function to get evaluation status
+        const getEvaluationStatus = (test) => {
+            if (test.isEvaluated) return 'evaluated';
+            if (test.attempt_id && test.attempt_status === 'submitted') return 'ready_for_evaluation';
+            if (test.status === 'attempted') return 'attempted';
+            return test.status;
+        };
+
+        // Function to handle test evaluation
+        const handleEvaluateTest = async (testAssignment) => {
+            console.log('Evaluating test assignment:', testAssignment);
+
+            let attemptId = testAssignment.attempt_id;
+
+            // If attempt_id is not available, fetch it first
+            if (!attemptId) {
+                try {
+                    const attemptResult = await getTestAttemptId(testAssignment.test_id, applicationId);
+                    if (!attemptResult.success) {
+                        toast.error('No test attempt found for evaluation');
+                        return;
+                    }
+                    attemptId = attemptResult.attempt.id;
+                } catch (error) {
+                    console.error('Error fetching attempt ID:', error);
+                    toast.error('Failed to find test attempt');
+                    return;
+                }
+            }
+
+            setIsEvaluating(true);
+            try {
+                const result = await evaluateTestAttempt(attemptId);
+
+                if (result.success) {
+                    setEvaluationResult({
+                        ...result.data,
+                        attemptId: attemptId
+                    });
+                    setShowEvaluationModal(true);
+                    await fetchTestAssignments();
+                    console.log('Test evaluated successfully:', result.data);
+                } else {
+                    toast.error(result.message || 'Failed to evaluate test');
+                }
+            } catch (error) {
+                console.error('Error evaluating test:', error);
+                toast.error('Error evaluating test');
+            } finally {
+                setIsEvaluating(false);
+            }
+        };
+
         if (isLoadingTests) {
             return (
                 <div className="mt-8">
@@ -1177,222 +1372,222 @@ export default function RecruiterApplicationDetailsPage() {
             <div className="mt-12">
                 <h3 className="text-xl font-bold text-gray-900 mb-6">Test Assignments</h3>
                 <div className="space-y-6">
-                    {testAssignments.map((test) => (
-                        <div key={test.id} className="bg-gradient-to-br from-gray-50 to-white rounded-2xl p-6 border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300">
-                            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
-                                <div className="flex-1">
-                                    {/* Test Header */}
-                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-                                        <div className="flex items-center gap-3">
-                                            <div className="p-2 bg-blue-100 rounded-lg">
-                                                <FileText className="w-5 h-5 text-blue-600" />
+                    {testAssignments.map((test) => {
+                        const evaluationStatus = getEvaluationStatus(test);
+                        console.log('Rendering test assignment:', test, 'with evaluation status:', evaluationStatus);
+
+                        return (
+                            <div key={test.id} className="bg-gradient-to-br from-gray-50 to-white rounded-2xl p-6 border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300">
+                                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                                    <div className="flex-1">
+                                        {/* Test Header */}
+                                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                                            <div className="flex items-center gap-3">
+                                                <div className="p-2 bg-blue-100 rounded-lg">
+                                                    <FileText className="w-5 h-5 text-blue-600" />
+                                                </div>
+                                                <div>
+                                                    <h4 className="text-xl font-bold text-gray-900">{test.test_title}</h4>
+                                                    <p className="text-gray-600 text-sm">
+                                                        Assigned by: <span className="font-semibold">{test.assigned_by_name}</span>
+                                                        {test.assigned_by_email && ` (${test.assigned_by_email})`}
+                                                    </p>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <h4 className="text-xl font-bold text-gray-900">{test.test_title}</h4>
-                                                <p className="text-gray-600 text-sm">
-                                                    Assigned by: <span className="font-semibold">{test.assigned_by_name}</span>
-                                                    {test.assigned_by_email && ` (${test.assigned_by_email})`}
-                                                </p>
+                                            <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold ${getTestStatusColor(evaluationStatus)}`}>
+                                                {evaluationStatus === 'assigned' && <Clock className="w-4 h-4" />}
+                                                {evaluationStatus === 'attempted' && <Play className="w-4 h-4" />}
+                                                {evaluationStatus === 'ready_for_evaluation' && <FileCheck className="w-4 h-4" />}
+                                                {evaluationStatus === 'evaluated' && <CheckCircle className="w-4 h-4" />}
+                                                {evaluationStatus === 'expired' && <XCircle className="w-4 h-4" />}
+                                                {evaluationStatus === 'cancelled' && <XCircle className="w-4 h-4" />}
+                                                {evaluationStatus.replace(/_/g, ' ')}
                                             </div>
                                         </div>
-                                        <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold ${getTestStatusColor(test.status)}`}>
-                                            {test.status === 'assigned' && <Clock className="w-4 h-4" />}
-                                            {test.status === 'attempted' && <FileCheck className="w-4 h-4" />}
-                                            {test.status === 'expired' && <XCircle className="w-4 h-4" />}
-                                            {test.status === 'cancelled' && <XCircle className="w-4 h-4" />}
-                                            {test.status.replace('_', ' ')}
+
+                                        {/* Test Details Grid */}
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                                            <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                                <div className="text-sm text-gray-600 font-medium">Duration</div>
+                                                <div className="text-lg font-semibold text-gray-900">
+                                                    {test.duration_minutes} mins
+                                                </div>
+                                            </div>
+                                            <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                                <div className="text-sm text-gray-600 font-medium">Total Marks</div>
+                                                <div className="text-lg font-semibold text-gray-900">
+                                                    {test.total_marks}
+                                                </div>
+                                            </div>
+                                            <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                                <div className="text-sm text-gray-600 font-medium">Passing Marks</div>
+                                                <div className="text-lg font-semibold text-gray-900">
+                                                    {test.passing_percentage}
+                                                </div>
+                                            </div>
+                                            <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                                <div className="text-sm text-gray-600 font-medium">Evaluation Status</div>
+                                                <div className={`text-lg font-semibold ${test.isEvaluated ? 'text-green-600' : 'text-yellow-600'}`}>
+                                                    {test.isEvaluated ? 'Evaluated' : 'Pending'}
+                                                </div>
+                                            </div>
                                         </div>
+
+                                        {/* Status Alert for Ready Evaluation */}
+                                        {evaluationStatus === 'ready_for_evaluation' && !test.isEvaluated && (
+                                            <div className="text-sm text-yellow-600 bg-yellow-50 p-2 rounded-lg border border-yellow-200">
+                                                Test completed - Ready for evaluation
+                                            </div>
+                                        )}
                                     </div>
 
-                                    {/* Test Details Grid */}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                                        <div className="bg-white rounded-lg p-3 border border-gray-200">
-                                            <div className="text-sm text-gray-600 font-medium">Duration</div>
-                                            <div className="text-lg font-semibold text-gray-900">
-                                                {test.duration_minutes} mins
+                                    {/* Right Side Section - Score Display and Actions */}
+                                    <div className="flex flex-col gap-4 lg:w-80">
+                                        {/* Score Display Section */}
+                                        {test.isEvaluated && test.percentage !== null ? (
+                                            <div className="flex flex-col gap-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                                <div className={`inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border-2 ${getScoreColor(test.percentage)}`}>
+                                                    <Star className="w-4 h-4" />
+                                                    <span className="font-semibold">Score: {test.percentage}%</span>
+                                                </div>
+                                                {test.passing_percentage && (
+                                                    <div className={`text-sm font-medium text-center ${test.is_passed ? 'text-green-600' : 'text-red-600'}`}>
+                                                        {test.is_passed ? 'Passed' : 'Failed'}
+                                                        (Required: {test.passing_percentage}%)
+                                                    </div>
+                                                )}
+                                                {test.attempt_id && (
+                                                    <Link
+                                                        href={`/organization/applications/${applicationId}/result/${test.attempt_id}`}
+                                                        className="cursor-pointer flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                    >
+                                                        <Eye className="w-4 h-4" />
+                                                        View Detailed Results
+                                                    </Link>
+                                                )}
                                             </div>
-                                        </div>
-                                        <div className="bg-white rounded-lg p-3 border border-gray-200">
-                                            <div className="text-sm text-gray-600 font-medium">Total Marks</div>
-                                            <div className="text-lg font-semibold text-gray-900">
-                                                {test.total_marks}
+                                        ) : null}
+
+                                        {/* Action Buttons */}
+                                        {(isAuthorizedRecruiter || isJobOwner || (user && user.role === 'OrgAdmin')) && (
+                                            <div className="flex flex-col gap-3">
+                                                {evaluationStatus === 'ready_for_evaluation' && (
+                                                    <button
+                                                        onClick={() => handleEvaluateTest(test)}
+                                                        disabled={isEvaluating}
+                                                        className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md disabled:opacity-50"
+                                                    >
+                                                        {isEvaluating ? (
+                                                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                                        ) : (
+                                                            <FileCheck className="w-4 h-4" />
+                                                        )}
+                                                        {isEvaluating ? 'Evaluating...' : 'Evaluate Test'}
+                                                    </button>
+                                                )}
+
+                                                {/* Additional test actions can be added here */}
+                                                {evaluationStatus === 'assigned' && (
+                                                    <button
+                                                        onClick={() => handleRescheduleTest(test)}
+                                                        className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                    >
+                                                        <RefreshCw className="w-4 h-4" />
+                                                        Reschedule Test
+                                                    </button>
+                                                )}
+
+                                                {(evaluationStatus === 'assigned' || evaluationStatus === 'ready_for_evaluation') && (
+                                                    <button
+                                                        onClick={() => handleCancelTest(test)}
+                                                        className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                    >
+                                                        <XCircle className="w-4 h-4" />
+                                                        Cancel Test
+                                                    </button>
+                                                )}
                                             </div>
-                                        </div>
-                                        <div className="bg-white rounded-lg p-3 border border-gray-200">
-                                            <div className="text-sm text-gray-600 font-medium">Passing Marks</div>
-                                            <div className="text-lg font-semibold text-gray-900">
-                                                {test.passing_marks}
-                                            </div>
-                                        </div>
-                                        <div className="bg-white rounded-lg p-3 border border-gray-200">
-                                            <div className="text-sm text-gray-600 font-medium">Test Status</div>
-                                            <div className={`text-lg font-semibold ${test.test_active ? 'text-green-600' : 'text-red-600'}`}>
-                                                {test.test_active ? 'Active' : 'Inactive'}
-                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                {/* Evaluation Result Modal */}
+                {showEvaluationModal && evaluationResult && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                        <div className="bg-white rounded-2xl max-w-md w-full p-6">
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="p-2 bg-green-100 rounded-lg">
+                                    <FileCheck className="w-6 h-6 text-green-600" />
+                                </div>
+                                <h3 className="text-xl font-bold text-gray-900">Test Evaluation Complete</h3>
+                            </div>
+
+                            <div className="space-y-4 mb-6">
+                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                    <div className="bg-gray-50 p-3 rounded-lg">
+                                        <div className="text-gray-600">Total Score</div>
+                                        <div className="text-lg font-semibold text-gray-900">
+                                            {evaluationResult.totalScore}/{evaluationResult.totalPossibleMarks}
                                         </div>
                                     </div>
-
-                                    {/* Test Description */}
-                                    {test.test_description && (
-                                        <div className="mb-4">
-                                            <div className="text-sm font-semibold text-gray-700 mb-2">Description</div>
-                                            <p className="text-gray-600 text-sm leading-relaxed">
-                                                {test.test_description}
-                                            </p>
-                                        </div>
-                                    )}
-
-                                    {/* Test Instructions */}
-                                    {test.instructions && (
-                                        <div className="mb-4">
-                                            <div className="text-sm font-semibold text-gray-700 mb-2">Instructions</div>
-                                            <p className="text-gray-600 text-sm leading-relaxed">
-                                                {test.instructions}
-                                            </p>
-                                        </div>
-                                    )}
-
-                                    {/* Timing Information */}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600 mb-4">
-                                        <div className="space-y-2">
-                                            <div className="flex items-center gap-2">
-                                                <Calendar className="w-4 h-4" />
-                                                <span>Assigned: {formatDateTime(test.assigned_at)}</span>
-                                            </div>
-                                            {test.test_start_date && (
-                                                <div className="flex items-center gap-2">
-                                                    <Play className="w-4 h-4" />
-                                                    <span>Start: {formatDateTime(test.test_start_date)}</span>
-                                                </div>
-                                            )}
-                                            {test.test_end_date && (
-                                                <div className="flex items-center gap-2">
-                                                    <Clock className="w-4 h-4" />
-                                                    <span>End: {formatDateTime(test.test_end_date)}</span>
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="space-y-2">
-                                            {test.is_proctored && (
-                                                <div className="flex items-center gap-2">
-                                                    <Eye className="w-4 h-4 text-blue-600" />
-                                                    <span className="text-blue-600 font-medium">Proctored Test</span>
-                                                </div>
-                                            )}
-                                            {test.proctoring_settings && (
-                                                <div className="text-xs text-gray-500">
-                                                    {test.proctoring_settings.fullscreen_required && 'Fullscreen • '}
-                                                    {test.proctoring_settings.copy_paste_prevention && 'Copy Prevention • '}
-                                                    {test.proctoring_settings.tab_switching_detection && 'Tab Switching Detection'}
-                                                </div>
-                                            )}
+                                    <div className="bg-gray-50 p-3 rounded-lg">
+                                        <div className="text-gray-600">Percentage</div>
+                                        <div className={`text-lg font-semibold ${getScoreColor(evaluationResult.percentage)}`}>
+                                            {evaluationResult.percentage}%
                                         </div>
                                     </div>
-
-                                    {/* Score Display */}
-                                    {test.score !== null && test.score !== undefined ? (
-                                        <div className="flex items-center gap-4">
-                                            <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 ${getScoreColor(test.score)}`}>
-                                                <Star className="w-4 h-4" />
-                                                <span className="font-semibold">Score: {test.score}%</span>
-                                            </div>
-                                            {test.passing_marks && (
-                                                <div className={`text-sm font-medium ${test.score >= test.passing_marks ? 'text-green-600' : 'text-red-600'}`}>
-                                                    {test.score >= test.passing_marks ? 'Passed' : 'Failed'}
-                                                    (Required: {test.passing_marks}%)
-                                                </div>
-                                            )}
+                                    <div className="bg-gray-50 p-3 rounded-lg">
+                                        <div className="text-gray-600">Result</div>
+                                        <div className={`text-lg font-semibold ${evaluationResult.isPassed ? 'text-green-600' : 'text-red-600'}`}>
+                                            {evaluationResult.isPassed ? 'PASSED' : 'FAILED'}
                                         </div>
-                                    ) : test.status === 'attempted' && (
-                                        <div className="text-sm text-gray-500">
-                                            Test completed - Score pending evaluation
+                                    </div>
+                                    <div className="bg-gray-50 p-3 rounded-lg">
+                                        <div className="text-gray-600">Passing Marks</div>
+                                        <div className="text-lg font-semibold text-gray-900">
+                                            {evaluationResult.passingMarks}%
                                         </div>
-                                    )}
+                                    </div>
                                 </div>
 
-                                {/* Action Buttons */}
-                                {(isAuthorizedRecruiter || isJobOwner || (user && user.role === 'OrgAdmin')) && (
-                                    <div className="flex flex-col gap-3 lg:w-48">
-                                        {test.status === 'assigned' && (
-                                            <>
-                                                <button
-                                                    onClick={() => handleRescheduleTest(test)}
-                                                    className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
-                                                >
-                                                    <RefreshCw className="w-4 h-4" />
-                                                    Reschedule
-                                                </button>
-                                                <button
-                                                    onClick={() => handleViewTestDetails(test)}
-                                                    className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
-                                                >
-                                                    <Eye className="w-4 h-4" />
-                                                    View Details
-                                                </button>
-                                                <button
-                                                    onClick={() => handleSendReminder(test)}
-                                                    className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
-                                                >
-                                                    <Send className="w-4 h-4" />
-                                                    Send Reminder
-                                                </button>
-                                            </>
-                                        )}
-                                        {test.status === 'attempted' && (
-                                            <>
-                                                <button
-                                                    onClick={() => handleViewTestResults(test)}
-                                                    className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
-                                                >
-                                                    <FileCheck className="w-4 h-4" />
-                                                    View Results
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDownloadReport(test)}
-                                                    className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
-                                                >
-                                                    <Download className="w-4 h-4" />
-                                                    Download Report
-                                                </button>
-                                            </>
-                                        )}
-                                        {(test.status === 'expired' || test.status === 'cancelled') && (
-                                            <>
-                                                <button
-                                                    onClick={() => handleRescheduleTest(test)}
-                                                    className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
-                                                >
-                                                    <RefreshCw className="w-4 h-4" />
-                                                    Reassign Test
-                                                </button>
-                                                <button
-                                                    onClick={() => handleViewTestDetails(test)}
-                                                    className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
-                                                >
-                                                    <Eye className="w-4 h-4" />
-                                                    View History
-                                                </button>
-                                            </>
-                                        )}
-
-                                        {/* Common Actions */}
-                                        <button
-                                            onClick={() => handleContactCandidate(test)}
-                                            className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
-                                        >
-                                            <Mail className="w-4 h-4" />
-                                            Contact Candidate
-                                        </button>
+                                {evaluationResult.needsAIEvaluation > 0 && (
+                                    <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+                                        <div className="flex items-center gap-2 text-yellow-800">
+                                            <AlertCircle className="w-4 h-4" />
+                                            <span className="text-sm">
+                                                {evaluationResult.needsAIEvaluation} question(s) need AI evaluation
+                                            </span>
+                                        </div>
                                     </div>
                                 )}
                             </div>
+
+                            <div className="flex gap-3 justify-end">
+                                <button
+                                    onClick={() => setShowEvaluationModal(false)}
+                                    className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium transition-colors"
+                                >
+                                    Close
+                                </button>
+                                {evaluationResult.attemptId && (
+                                    <Link
+                                        href={`/organization/test-results/${evaluationResult.attemptId}`}
+                                        className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-all duration-200"
+                                    >
+                                        View Detailed Results
+                                    </Link>
+                                )}
+                            </div>
                         </div>
-                    ))}
-                </div>
+                    </div>
+                )}
             </div>
         );
     };
-
 
     const InterviewsSection = () => {
         if (isLoadingInterviews) {
@@ -1531,21 +1726,22 @@ export default function RecruiterApplicationDetailsPage() {
                                     {/* Action Buttons */}
                                     {(isAuthorizedRecruiter || isJobOwner || (user && user.role === 'OrgAdmin')) && (
                                         <div className="flex flex-col gap-3 lg:w-48">
+
                                             {interview.status === 'scheduled' && (
                                                 <>
                                                     {isCompleted ? (
                                                         <>
                                                             <button
-                                                                onClick={() => handleUpdateInterviewStatus(interview.id, 'completed', `Interview marked as completed by ${user.name}`)}
+                                                                onClick={() => handleCompleteInterview(interview)}
                                                                 disabled={isUpdating}
-                                                                className="flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md disabled:opacity-50"
+                                                                className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md disabled:opacity-50"
                                                             >
                                                                 <CheckCircle className="w-4 h-4" />
                                                                 Mark as Completed
                                                             </button>
                                                             <button
                                                                 onClick={() => handleRescheduleInterview(interview)}
-                                                                className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                                className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
                                                             >
                                                                 <RefreshCw className="w-4 h-4" />
                                                                 Reschedule Interview
@@ -1554,16 +1750,16 @@ export default function RecruiterApplicationDetailsPage() {
                                                     ) : (
                                                         <>
                                                             <button
-                                                                onClick={() => handleUpdateInterviewStatus(interview.id, 'completed', `Interview marked as completed by ${user.name}`)}
+                                                                onClick={() => handleCompleteInterview(interview)}
                                                                 disabled={isUpdating}
-                                                                className="flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md disabled:opacity-50"
+                                                                className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md disabled:opacity-50"
                                                             >
                                                                 <CheckCircle className="w-4 h-4" />
                                                                 Mark Completed
                                                             </button>
                                                             <button
                                                                 onClick={() => handleRescheduleInterview(interview)}
-                                                                className="flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                                className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
                                                             >
                                                                 <RefreshCw className="w-4 h-4" />
                                                                 Reschedule
@@ -1571,9 +1767,9 @@ export default function RecruiterApplicationDetailsPage() {
                                                         </>
                                                     )}
                                                     <button
-                                                        onClick={() => handleUpdateInterviewStatus(interview.id, 'cancelled', `Interview cancelled by ${user.name}`)}
+                                                        onClick={() => handleCancelInterview(interview)}
                                                         disabled={isUpdating}
-                                                        className="flex items-center justify-center gap-2 px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md disabled:opacity-50"
+                                                        className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md disabled:opacity-50"
                                                     >
                                                         <XCircle className="w-4 h-4" />
                                                         Cancel Interview
@@ -1583,7 +1779,7 @@ export default function RecruiterApplicationDetailsPage() {
                                             {interview.status === 'completed' && (
                                                 <button
                                                     onClick={() => handleRescheduleInterview(interview)}
-                                                    className="flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                    className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
                                                 >
                                                     <RefreshCw className="w-4 h-4" />
                                                     Schedule New Interview
@@ -1592,21 +1788,12 @@ export default function RecruiterApplicationDetailsPage() {
                                             {interview.status === 'cancelled' && (
                                                 <button
                                                     onClick={() => handleRescheduleInterview(interview)}
-                                                    className="flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                                                    className="cursor-pointer flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
                                                 >
                                                     <RefreshCw className="w-4 h-4" />
                                                     Reschedule Interview
                                                 </button>
                                             )}
-
-                                            {/* Common Actions */}
-                                            <button
-                                                onClick={() => console.log('Contact about interview:', interview)}
-                                                className="flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
-                                            >
-                                                <Mail className="w-4 h-4" />
-                                                Contact Candidate
-                                            </button>
                                         </div>
                                     )}
                                 </div>
@@ -1640,7 +1827,7 @@ export default function RecruiterApplicationDetailsPage() {
                 getSelectedInterviewers={getSelectedInterviewers}
                 formatDateTime={formatDateTime}
             />
-            {/* Assign Test Modal */}
+
             <AssignTestModal
                 isOpen={isAssignTestModalOpen}
                 onClose={() => setIsAssignTestModalOpen(false)}
@@ -1686,19 +1873,51 @@ export default function RecruiterApplicationDetailsPage() {
                 interviewTypes={interviewTypes}
             />
 
+            <CompleteInterviewModal
+                isOpen={isCompleteInterviewModalOpen}
+                onClose={() => {
+                    setIsCompleteInterviewModalOpen(false);
+                    setSelectedInterviewForAction(null);
+                    setActionNotes('');
+                }}
+                interview={selectedInterviewForAction}
+                onConfirm={confirmCompleteInterview}
+                isUpdating={isUpdating}
+                notes={actionNotes}
+                onNotesChange={setActionNotes}
+                interviewTypes={interviewTypes}
+                formatDateTime={formatDateTime}
+            />
+
+            <CancelInterviewModal
+                isOpen={isCancelInterviewModalOpen}
+                onClose={() => {
+                    setIsCancelInterviewModalOpen(false);
+                    setSelectedInterviewForAction(null);
+                    setActionNotes('');
+                }}
+                interview={selectedInterviewForAction}
+                onConfirm={confirmCancelInterview}
+                isUpdating={isUpdating}
+                notes={actionNotes}
+                onNotesChange={setActionNotes}
+                interviewTypes={interviewTypes}
+                formatDateTime={formatDateTime}
+            />
+
             <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
                 {/* Header */}
                 <div className="bg-white border-b border-gray-200 shadow-sm relative overflow-hidden">
                     <div className="absolute inset-0 bg-gradient-to-r from-blue-50 to-indigo-50 opacity-50"></div>
-                    <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                    <div className="max-w-7xl mx-auto relative px-4 sm:px-6 lg:px-8 py-6 ">
                         <div className="flex items-center gap-4 mb-4">
-                            <Link
-                                href="/organization/applications"
-                                className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-all duration-200 font-medium group"
+                            <button
+                                onClick={() => router.push('/organization/applications')}
+                                className="cursor-pointer inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-all duration-200 font-medium group"
                             >
                                 <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
                                 Back to Applications
-                            </Link>
+                            </button>
                         </div>
 
                         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
@@ -1760,7 +1979,7 @@ export default function RecruiterApplicationDetailsPage() {
                 </div>
 
                 {/* Main Content */}
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 2xl:px-20">
                     {/* Mobile Tab Selector */}
                     <div className="md:hidden mb-6">
                         <button
@@ -2444,7 +2663,6 @@ export default function RecruiterApplicationDetailsPage() {
     );
 }
 
-// AssignTestModal component remains exactly the same as in your original code
 const AssignTestModal = ({
     isOpen,
     onClose,
@@ -2585,7 +2803,7 @@ const AssignTestModal = ({
                                                                 </span>
                                                                 <span className="flex items-center gap-1">
                                                                     <Star className="w-4 h-4" />
-                                                                    {test.passing_marks}% to pass
+                                                                    {test.passing_percentage}% to pass
                                                                 </span>
                                                             </div>
                                                             {test.description && (
@@ -2643,7 +2861,7 @@ const AssignTestModal = ({
                                             <div className="text-xs text-gray-600 space-y-1">
                                                 <div>Duration: {test.duration_minutes} mins</div>
                                                 <div>Questions: {test.question_count || 'N/A'}</div>
-                                                <div>Passing: {test.passing_marks}%</div>
+                                                <div>Passing: {test.passing_percentage}%</div>
                                             </div>
                                         </div>
                                     );
@@ -3498,6 +3716,202 @@ const RescheduleInterviewModal = ({
                             )}
                         </button>
                     </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const CompleteInterviewModal = ({
+    isOpen,
+    onClose,
+    interview,
+    onConfirm,
+    isUpdating,
+    notes,
+    onNotesChange,
+    interviewTypes,
+    formatDateTime
+}) => {
+    if (!isOpen || !interview) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-lg flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl max-w-md w-full max-h-[85vh] flex flex-col overflow-y-auto">
+                {/* Header - Fixed */}
+                <div className="p-6 border-b border-gray-200 flex-shrink-0">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-green-100 rounded-lg">
+                            <CheckCircle className="w-6 h-6 text-green-600" />
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-bold text-gray-900">Mark Interview as Completed</h3>
+                            <p className="text-gray-600 text-sm mt-1">
+                                Confirm that this interview has been completed
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Content - Scrollable */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <h4 className="font-semibold text-gray-900 mb-2">Interview Details</h4>
+                        <div className="text-sm text-gray-600 space-y-1">
+                            <div><strong>Type:</strong> {interviewTypes.find(t => t.value === interview.interview_type)?.label}</div>
+                            <div><strong>Date:</strong> {formatDateTime(interview.scheduled_at)}</div>
+                            <div><strong>Duration:</strong> {interview.duration_minutes} minutes</div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                            <FileText className="w-4 h-4" />
+                            Completion Notes (Optional)
+                        </label>
+                        <textarea
+                            value={notes}
+                            onChange={(e) => onNotesChange(e.target.value)}
+                            placeholder="Add any notes about the interview completion..."
+                            rows={3}
+                            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors resize-none"
+                        />
+                    </div>
+
+                    <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                        <div className="flex items-start gap-3">
+                            <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                            <div className="text-sm text-blue-800">
+                                <strong>Note:</strong> This action will mark the interview as completed and update the application status if needed.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Footer - Fixed */}
+                <div className="p-6 border-t border-gray-200 bg-gray-50 flex gap-3 justify-end flex-shrink-0">
+                    <button
+                        onClick={onClose}
+                        disabled={isUpdating}
+                        className="cursor-pointer px-4 py-2 text-gray-600 hover:text-gray-800 font-medium disabled:opacity-50 transition-colors"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={onConfirm}
+                        disabled={isUpdating}
+                        className="cursor-pointer flex items-center gap-2 px-6 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {isUpdating ? (
+                            <>
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                Updating...
+                            </>
+                        ) : (
+                            <>
+                                <CheckCircle className="w-4 h-4" />
+                                Mark as Completed
+                            </>
+                        )}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const CancelInterviewModal = ({
+    isOpen,
+    onClose,
+    interview,
+    onConfirm,
+    isUpdating,
+    notes,
+    onNotesChange,
+    interviewTypes,
+    formatDateTime
+}) => {
+    if (!isOpen || !interview) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-lg flex items-center justify-center z-50 p-4 max-h-screen">
+            <div className="bg-white rounded-2xl max-w-md w-full max-h-[85vh] flex flex-col">
+                {/* Header - Fixed */}
+                <div className="p-6 border-b border-gray-200 flex-shrink-0">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-red-100 rounded-lg">
+                            <XCircle className="w-6 h-6 text-red-600" />
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-bold text-gray-900">Cancel Interview</h3>
+                            <p className="text-gray-600 text-sm mt-1">
+                                Confirm cancellation of this interview
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Content - Scrollable */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <h4 className="font-semibold text-gray-900 mb-2">Interview Details</h4>
+                        <div className="text-sm text-gray-600 space-y-1">
+                            <div><strong>Type:</strong> {interviewTypes.find(t => t.value === interview.interview_type)?.label}</div>
+                            <div><strong>Date:</strong> {formatDateTime(interview.scheduled_at)}</div>
+                            <div><strong>Duration:</strong> {interview.duration_minutes} minutes</div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                            <FileText className="w-4 h-4" />
+                            Cancellation Reason (Optional)
+                        </label>
+                        <textarea
+                            value={notes}
+                            onChange={(e) => onNotesChange(e.target.value)}
+                            placeholder="Add reason for cancellation..."
+                            rows={3}
+                            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors resize-none"
+                        />
+                    </div>
+
+                    <div className="bg-red-50 p-4 rounded-lg border border-red-200">
+                        <div className="flex items-start gap-3">
+                            <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                            <div className="text-sm text-red-800">
+                                <strong>Warning:</strong> This action cannot be undone. The candidate and interviewers will be notified about the cancellation.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Footer - Fixed */}
+                <div className="p-6 border-t border-gray-200 bg-gray-50 flex gap-3 justify-end flex-shrink-0">
+                    <button
+                        onClick={onClose}
+                        disabled={isUpdating}
+                        className="cursor-pointer px-4 py-2 text-gray-600 hover:text-gray-800 font-medium disabled:opacity-50 transition-colors"
+                    >
+                        Keep Interview
+                    </button>
+                    <button
+                        onClick={onConfirm}
+                        disabled={isUpdating}
+                        className="cursor-pointer flex items-center gap-2 px-6 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {isUpdating ? (
+                            <>
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                Cancelling...
+                            </>
+                        ) : (
+                            <>
+                                <XCircle className="w-4 h-4" />
+                                Cancel Interview
+                            </>
+                        )}
+                    </button>
                 </div>
             </div>
         </div>

@@ -2,6 +2,7 @@
 
 import { query } from '@/actions/db';
 import jwt from 'jsonwebtoken';
+import { cookies } from 'next/headers';
 
 export async function saveProfile(profileData) {
     try {
@@ -21,6 +22,7 @@ export async function saveProfile(profileData) {
         } = profileData;
 
         console.log("Saving profile for userId:", name);
+
         // Validate required field
         if (!userId) {
             return { success: false, message: "userId is required" };
@@ -34,6 +36,7 @@ export async function saveProfile(profileData) {
         );
 
         console.log(isProfileComplete);
+
         // Upsert query: insert if not exists, else update
         const sql = `
             INSERT INTO profiles
@@ -85,8 +88,8 @@ export async function saveProfile(profileData) {
             orgName = orgRes?.rows[0]?.company_name || null;
         }
 
-        // Generate new JWT token with updated profile completion status
-        const newToken = jwt.sign(
+        // Generate new JWT tokens
+        const accessToken = jwt.sign(
             {
                 id: userId,
                 email,
@@ -94,15 +97,52 @@ export async function saveProfile(profileData) {
                 name,
                 isProfileComplete: isProfileComplete,
                 orgId: userData.org_id || null,
-                orgName: orgName
+                orgName: orgName,
+                type: 'access'
             },
             process.env.JWT_SECRET,
-            { expiresIn: process.env.JWT_EXPIRY || "7d" }
+            { expiresIn: '15m' }
         );
+
+        const refreshToken = jwt.sign(
+            {
+                id: userId,
+                type: 'refresh'
+            },
+            process.env.REFRESH_TOKEN_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        // Store refresh token in database
+        await query(
+            "UPDATE users SET refresh_token = $1 WHERE id = $2",
+            [refreshToken, userId]
+        );
+
+        // Set HTTP-only cookies
+        const cookieStore = await cookies();
+
+        // Access token cookie (short-lived)
+        cookieStore.set('accessToken', accessToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 15 * 60,
+            path: '/',
+        });
+
+        // Refresh token cookie (longer-lived)
+        cookieStore.set('refreshToken', refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 7 * 24 * 60 * 60,
+            path: '/',
+        });
 
         return {
             success: true,
-            token: newToken,
+            // Don't return tokens in response body
         };
     } catch (error) {
         console.error("Profile save error:", error);

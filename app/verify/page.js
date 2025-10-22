@@ -33,8 +33,9 @@ export default function VerifyPage() {
       const data = await verifyOTP({ email, otp });
 
       if (data.success) {
-        localStorage.setItem("token", data.token);
         setStatus('Email verified successfully!');
+
+        // Redirect to dashboard - cookies are automatically set
         setTimeout(() => router.push('/dashboard'), 1500);
       } else {
         setError(data.message || 'Verification failed');

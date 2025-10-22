@@ -5,7 +5,10 @@ import { query } from '@/actions/db';
 export async function getJobApplications(jobId) {
     try {
         const sql = `
-            SELECT * FROM applications 
+            SELECT a.*,
+            CONCAT(u.first_name, ' ', u.last_name) AS applicant_name,
+            u.email AS applicant_email FROM users u
+            JOIN applications a ON a.applicant_id = u.id
             WHERE job_id = $1 
             ORDER BY applied_at DESC
         `;

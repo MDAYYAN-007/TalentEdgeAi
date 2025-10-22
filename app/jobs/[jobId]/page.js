@@ -57,13 +57,6 @@ export default function JobDetailPage() {
         }
     }, [jobId]);
 
-    const handleApply = async () => {
-        setIsApplying(true);
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        alert('Application submitted successfully!');
-        setIsApplying(false);
-    };
-
     const handleShare = async () => {
         if (navigator.share) {
             try {
@@ -152,145 +145,105 @@ export default function JobDetailPage() {
         <>
             <Navbar />
             <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-50">
-                <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-8">
-                    {/* Back Button */}
-                    <div className="mb-6">
-                        <Link
-                            href="/jobs"
-                            className="inline-flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-all duration-200 font-medium cursor-pointer group"
-                        >
-                            <ArrowLeft className="w-4 h-4 transition-transform duration-200 group-hover:-translate-x-1" />
-                            Back to Jobs
-                        </Link>
-                    </div>
+                {/* Header */}
+                <div className="bg-white border-b border-gray-200 shadow-sm relative overflow-hidden">
+                    <div className="absolute inset-0 bg-gradient-to-r from-blue-50 to-indigo-50 opacity-50"></div>
+                    <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                        <div className="flex items-center gap-4 mb-4">
+                            <Link
+                                href="/jobs"
+                                className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-all duration-200 font-medium group"
+                            >
+                                <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+                                Back to Jobs
+                            </Link>
+                        </div>
 
-                    {/* Job Header */}
-                    <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 md:p-8 mb-8 transition-shadow duration-300 hover:shadow-xl">
-                        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6 md:gap-8">
-                            <div className="flex-1 min-w-0">
-                                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 md:gap-4 mb-4">
-                                    <div className="min-w-0 flex-1">
-                                        <h1 className="text-3xl md:text-4xl font-bold text-slate-900 mb-2 break-words">
-                                            {job.title}
-                                        </h1>
-                                        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4 text-slate-600 mb-4">
-                                            <div className="flex items-center gap-2">
-                                                <Building2 className="w-5 h-5 text-blue-500 flex-shrink-0" />
-                                                <span className="font-semibold text-base md:text-lg truncate">{job.company_name}</span>
-                                            </div>
-                                            {job.department && (
-                                                <span className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-sm font-medium">
-                                                    {job.department}
-                                                </span>
-                                            )}
-                                        </div>
+                        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                            <div className="flex-1">
+                                <div className="flex items-center gap-3 mb-3">
+                                    <div className="p-2 bg-indigo-100 rounded-lg shadow-sm">
+                                        <Briefcase className="w-6 h-6 text-indigo-600" />
                                     </div>
-
-                                    {/* Status Badge */}
-                                    <span className="px-4 py-2 bg-green-100 text-green-800 rounded-full text-sm font-semibold whitespace-nowrap">
-                                        {job.status}
+                                    <span className="text-gray-700 font-semibold text-lg bg-white px-3 py-1 rounded-full border">
+                                        Job Details
                                     </span>
                                 </div>
 
-                                {/* Key Details Grid */}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6">
-                                    {/* Location */}
-                                    <div className="flex items-start gap-3 p-3 md:p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors duration-200">
-                                        <div className="p-2 bg-blue-100 rounded-lg flex-shrink-0">
-                                            <MapPin className="w-5 h-5 text-blue-600" />
-                                        </div>
-                                        <div className="min-w-0">
-                                            <p className="text-xs md:text-sm text-slate-500 font-medium">Location</p>
-                                            <p className="font-semibold text-slate-900 truncate">{job.location}</p>
-                                        </div>
+                                <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+                                    {job.title}
+                                </h1>
+
+                                <div className="flex flex-wrap items-center gap-4 text-gray-600">
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <Building2 className="w-4 h-4" />
+                                        <span className="text-sm font-medium">{job.company_name || 'Company'}</span>
                                     </div>
-
-                                    {/* Job Type */}
-                                    <div className="flex items-start gap-3 p-3 md:p-4 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors duration-200">
-                                        <div className="p-2 bg-purple-100 rounded-lg flex-shrink-0">
-                                            <Clock className="w-5 h-5 text-purple-600" />
-                                        </div>
-                                        <div className="min-w-0">
-                                            <p className="text-xs md:text-sm text-slate-500 font-medium">Job Type</p>
-                                            <p className="font-semibold text-slate-900 text-sm">{job.job_type} • {job.work_mode}</p>
-                                        </div>
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <MapPin className="w-4 h-4" />
+                                        <span className="text-sm font-medium">{job.location}</span>
                                     </div>
-
-                                    {/* Salary */}
-                                    {(job.min_salary || job.max_salary) && (
-                                        <div className="flex items-start gap-3 p-3 md:p-4 bg-green-50 rounded-lg hover:bg-green-100 transition-colors duration-200">
-                                            <div className="p-2 bg-green-100 rounded-lg flex-shrink-0">
-                                                <DollarSign className="w-5 h-5 text-green-600" />
-                                            </div>
-                                            <div className="min-w-0">
-                                                <p className="text-xs md:text-sm text-slate-500 font-medium">Salary</p>
-                                                <p className="font-semibold text-slate-900 text-sm truncate">
-                                                    {job.currency} {Number(job.min_salary).toLocaleString()}
-                                                    {job.max_salary && job.min_salary && ' - '}
-                                                    {job.max_salary && Number(job.max_salary).toLocaleString()}
-                                                </p>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Experience */}
-                                    <div className="flex items-start gap-3 p-3 md:p-4 bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors duration-200">
-                                        <div className="p-2 bg-orange-100 rounded-lg flex-shrink-0">
-                                            <Users className="w-5 h-5 text-orange-600" />
-                                        </div>
-                                        <div className="min-w-0">
-                                            <p className="text-xs md:text-sm text-slate-500 font-medium">Experience</p>
-                                            <p className="font-semibold text-slate-900 text-sm truncate">{job.experience_level}</p>
-                                        </div>
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <Clock className="w-4 h-4" />
+                                        <span className="text-sm font-medium">{job.job_type} • {job.work_mode}</span>
                                     </div>
-                                </div>
-
-                                {/* Posted Date */}
-                                <div className="flex items-center gap-2 text-slate-500 text-sm">
-                                    <Calendar className="w-4 h-4 flex-shrink-0" />
-                                    <span>Posted on {formatDate(job.created_at)}</span>
                                 </div>
                             </div>
 
-                            {/* Action Buttons */}
-                            <div className="flex flex-col gap-3 w-full sm:w-auto lg:w-56 flex-shrink-0">
-                                <Link
-                                    href={`/jobs/${jobId}/apply`}
-                                    className="flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-all duration-200 shadow-md hover:shadow-lg cursor-pointer active:scale-95 group"
-                                >
-                                    Apply Now
-                                    <ChevronRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-1" />
-                                </Link>
-
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={handleShare}
-                                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2 border-2 border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 hover:border-slate-400 transition-all duration-200 font-medium cursor-pointer active:scale-95"
-                                    >
-                                        <Share2 className="w-4 h-4" />
-                                        <span className="hidden sm:inline">Share</span>
-                                    </button>
-                                    <button
-                                        onClick={handleSave}
-                                        className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 border-2 rounded-lg transition-all duration-200 font-medium cursor-pointer active:scale-95 ${
-                                            isSaved
-                                                ? 'bg-blue-50 border-blue-300 text-blue-600'
-                                                : 'border-slate-300 text-slate-700 hover:bg-slate-50 hover:border-slate-400'
-                                        }`}
-                                    >
-                                        <Bookmark className={`w-4 h-4 ${isSaved ? 'fill-current' : ''}`} />
-                                        <span className="hidden sm:inline">Save</span>
-                                    </button>
+                            <div className="flex flex-col gap-3">
+                                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-green-200 bg-green-50 text-green-700 shadow-sm">
+                                    <CheckCircle className="w-4 h-4" />
+                                    <span className="font-semibold capitalize text-sm">{job.status}</span>
                                 </div>
-
-                                {shareMessage && (
-                                    <div className="px-3 py-2 bg-green-100 text-green-800 text-sm rounded-lg text-center font-medium animate-pulse">
-                                        {shareMessage}
+                                {(job.min_salary || job.max_salary) && (
+                                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-blue-200 bg-blue-50 text-blue-700 shadow-sm">
+                                        <DollarSign className="w-4 h-4" />
+                                        <span className="font-semibold text-sm">
+                                            {job.currency} {Number(job.min_salary).toLocaleString()}
+                                            {job.max_salary && job.min_salary && ' - '}
+                                            {job.max_salary && Number(job.max_salary).toLocaleString()}
+                                        </span>
                                     </div>
                                 )}
                             </div>
                         </div>
+
+                        {/* Quick Actions */}
+                        <div className="flex flex-wrap gap-3 mt-6 pt-6 border-t border-gray-200">
+                            <Link
+                                href={`/jobs/${jobId}/apply`}
+                                className="cursor-pointer flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-lg hover:shadow-xl"
+                            >
+                                <Briefcase className="w-4 h-4" />
+                                Apply Now
+                            </Link>
+
+                            {/* Share Button */}
+                            <button
+                                onClick={handleShare}
+                                className="cursor-pointer flex items-center gap-2 px-4 py-2 bg-white text-gray-700 rounded-lg border border-gray-300 hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 font-medium shadow-sm hover:shadow-md"
+                            >
+                                <Share2 className="w-4 h-4" />
+                                Share
+                            </button>
+
+                            {shareMessage && (
+                                <div className="flex items-center gap-2 px-3 py-2 bg-green-100 text-green-700 rounded-lg border border-green-200">
+                                    <CheckCircle className="w-4 h-4" />
+                                    <span className="text-sm font-medium">{shareMessage}</span>
+                                </div>
+                            )}
+
+                            {job.department && (
+                                <div className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-medium">
+                                    <span className="text-sm">Department: {job.department}</span>
+                                </div>
+                            )}
+                        </div>
                     </div>
+                </div>
+                <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-8">
+
 
                     {/* Job Details */}
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">

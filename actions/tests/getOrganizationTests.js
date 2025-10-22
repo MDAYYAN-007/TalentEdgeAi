@@ -9,7 +9,7 @@ export async function getOrganizationTests(orgId) {
                 t.*,
                 COUNT(tq.id) as question_count,
                 CONCAT(u.first_name, ' ', u.last_name) as created_by_name,
-                COUNT(ta.id) as assignment_count
+                COUNT(DISTINCT ta.id) as assignment_count
             FROM tests t
             LEFT JOIN test_questions tq ON t.id = tq.test_id
             LEFT JOIN users u ON t.created_by = u.id

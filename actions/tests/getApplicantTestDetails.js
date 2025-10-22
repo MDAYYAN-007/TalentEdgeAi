@@ -12,7 +12,7 @@ export async function getApplicantTestDetails(testAssignmentId, userId) {
                 t.description,
                 t.duration_minutes,
                 t.total_marks,
-                t.passing_marks,
+                t.passing_percentage,
                 t.instructions,
                 t.created_at as test_created_at,
                 j.title as job_title,
@@ -51,7 +51,7 @@ export async function getApplicantTestDetails(testAssignmentId, userId) {
             availability = 'not_started';
         } else if (now > endTime) {
             availability = 'expired';
-        } else if (testAssignment.status !== 'assigned') {
+        } else if (testAssignment.status !== 'assigned' || testAssignment.status === 'in_progress') {
             availability = 'completed';
         }
 

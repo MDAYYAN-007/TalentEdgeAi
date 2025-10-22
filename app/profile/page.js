@@ -6,6 +6,7 @@ import Footer from '@/components/Footer';
 import Navbar from '@/components/Navbar';
 import { getProfile } from '@/actions/profile/getProfile';
 import Link from 'next/link';
+import { getCurrentUser } from '@/actions/auth/auth-utils';
 
 export default function ProfilePage() {
     const [user, setUser] = useState(null);
@@ -14,18 +15,19 @@ export default function ProfilePage() {
 
     useEffect(() => {
         const fetchProfile = async () => {
-            const token = localStorage.getItem('token');
-            if (!token) {
-                setIsLoading(false);
-                return;
-            }
-
             try {
-                const decoded = jwtDecode(token);
-                console.log('Decoded JWT:', decoded);
-                setUser(decoded);
+                const currentUser = await getCurrentUser();
+                
+                if (!currentUser) {
+                    console.log('No authenticated user found');
+                    setIsLoading(false);
+                    return;
+                }
 
-                const data = await getProfile(decoded.id);
+                console.log('Authenticated User:', currentUser);
+                setUser(currentUser);
+
+                const data = await getProfile(currentUser.id);
 
                 console.log("Profile Fetch Response:", data);
 
@@ -35,8 +37,8 @@ export default function ProfilePage() {
 
                     // Parse and set profile data
                     setProfileData({
-                        name: decoded.name || 'Unknown User',
-                        email: decoded.email,
+                        name: currentUser.name || 'Unknown User',
+                        email: currentUser.email,
                         phone: profile.phone || '',
                         linkedinUrl: profile.linkedin_url || '',
                         portfolioUrl: profile.portfolio_url || '',
@@ -95,9 +97,7 @@ export default function ProfilePage() {
                         <div className="relative">
                             {/* Subtle background blur effect */}
                             <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl blur-2xl opacity-20"></div>
-
                             <div className="relative bg-white/80 backdrop-blur-xl p-8 sm:p-10 rounded-3xl shadow-2xl border border-white/20 text-center space-y-6">
-
                                 {/* Updated Icon: Key or Lock for Authentication */}
                                 <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-red-500 to-pink-700 shadow-lg">
                                     {/* Using a standard 'Key' icon to signify access required */}
@@ -142,69 +142,98 @@ export default function ProfilePage() {
     return (
         <>
             <Navbar />
-            <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50 py-12 px-4">
-                <div className="max-w-6xl mx-auto space-y-6">
-                    {user.isProfileComplete && profileData ? (
-                        /* Profile Already Completed */
-                        <div className="space-y-6">
-                            {/* Profile Header */}
-                            <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-xl border border-white/20 p-6 sm:p-8">
-                                <div className="flex flex-col sm:flex-row items-start gap-6">
-                                    <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 shadow-xl flex items-center justify-center text-5xl font-bold text-white">
-                                        {profileData.name.charAt(0)}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 mb-2">{profileData.name}</h1>
-                                        <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-sm font-semibold shadow-md mb-4">
-                                            {user.role}
-                                        </span>
+            <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50 pb-12 ">
 
-                                        {/* Contact Info */}
-                                        <div className="mt-4 flex flex-wrap gap-4 text-sm text-slate-600">
-                                            <a href={`mailto:${profileData.email}`} className="flex items-center gap-2 hover:text-indigo-600 transition-colors">
-                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {user.isProfileComplete && profileData ? (
+                    <>
+                        {/* Profile Header */}
+                        <div className="bg-white border-b border-gray-200 shadow-sm relative overflow-hidden mb-4">
+                            <div className="absolute inset-0 bg-gradient-to-r from-blue-50 to-indigo-50 opacity-50"></div>
+                            <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                                <div className="flex items-center gap-4 mb-4">
+                                    <Link
+                                        href="/dashboard"
+                                        className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-all duration-200 font-medium group cursor-pointer"
+                                    >
+                                        <svg className="w-5 h-5 group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                                        </svg>
+                                        Back to Dashboard
+                                    </Link>
+                                </div>
+
+                                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                                    <div className="flex-1">
+                                        <div className="flex items-center gap-3 mb-3">
+                                            <div className="p-2 bg-indigo-100 rounded-lg shadow-sm">
+                                                <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                </svg>
+                                            </div>
+                                            <span className="text-gray-700 font-semibold text-lg bg-white px-3 py-1 rounded-full border">
+                                                My Profile
+                                            </span>
+                                        </div>
+
+                                        <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+                                            {profileData?.name || user?.name || 'My Profile'}
+                                        </h1>
+
+                                        <div className="flex flex-wrap items-center gap-4 text-gray-600">
+                                            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                                                 </svg>
-                                                {profileData.email}
-                                            </a>
-                                            {profileData.phone && (
-                                                <a href={`tel:${profileData.phone}`} className="flex items-center gap-2 hover:text-indigo-600 transition-colors">
-                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                                                <span className="text-sm font-medium">{user?.email}</span>
+                                            </div>
+                                            {profileData?.skills && (
+                                                <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                                                     </svg>
-                                                    {profileData.phone}
-                                                </a>
+                                                    <span className="text-sm font-medium">{profileData.skills.length} Skills</span>
+                                                </div>
                                             )}
-                                            {profileData.linkedinUrl && (
-                                                <a href={profileData.linkedinUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-indigo-600 transition-colors">
-                                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                                                        <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" />
-                                                    </svg>
-                                                    LinkedIn
-                                                </a>
-                                            )}
-                                            {profileData.portfolioUrl && (
-                                                <a href={profileData.portfolioUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-indigo-600 transition-colors">
-                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-                                                    </svg>
-                                                    Portfolio
-                                                </a>
-                                            )}
+                                            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                </svg>
+                                                <span className="text-sm font-medium capitalize">{user?.role || 'User'}</span>
+                                            </div>
                                         </div>
                                     </div>
-                                    <a
-                                        href={'profile/edit'}
-                                        className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-semibold hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all flex items-center gap-2 self-start"
-                                    >
-                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                        </svg>
-                                        Edit Profile
-                                    </a>
+
+                                    <div className="flex flex-col gap-3">
+                                        <Link
+                                            href="/profile/edit"
+                                            className="cursor-pointer flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-lg hover:shadow-xl"
+                                        >
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                            </svg>
+                                            Edit Profile
+                                        </Link>
+                                        {user?.isProfileComplete ? (
+                                            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-green-200 bg-green-50 text-green-700 shadow-sm">
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                </svg>
+                                                <span className="font-semibold text-sm">Profile Complete</span>
+                                            </div>
+                                        ) : (
+                                            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-orange-200 bg-orange-50 text-orange-700 shadow-sm">
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                                </svg>
+                                                <span className="font-semibold text-sm">Profile Incomplete</span>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
+                        </div>
 
+                        <div className="max-w-6xl mx-auto space-y-6">
                             {/* Skills Section */}
                             {profileData.skills.length > 0 && (
                                 <div className="bg-white/80 backdrop-blur-xl p-6 sm:p-8 rounded-3xl shadow-xl border border-white/20">
@@ -323,57 +352,58 @@ export default function ProfilePage() {
                                     </div>
                                 )}
                             </div>
-
                         </div>
-                    ) : (
-                        /* Profile Not Completed */
-                        <div className="max-w-2xl mx-auto">
-                            <div className="relative">
-                                <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl blur-2xl opacity-20"></div>
-                                <div className="relative bg-white/80 backdrop-blur-xl p-8 sm:p-12 rounded-3xl shadow-2xl border border-white/20 text-center space-y-6">
-                                    <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-amber-400 to-orange-600 shadow-lg">
-                                        <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                        </svg>
-                                    </div>
-                                    <h1 className="text-3xl sm:text-4xl font-bold text-slate-900">
-                                        Welcome, {user.name}! 👋
-                                    </h1>
-                                    <p className="text-lg text-slate-600 max-w-md mx-auto">
-                                        Your profile is incomplete. Complete your profile to unlock personalized job recommendations and better opportunities!
-                                    </p>
 
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4">
-                                        <div className="p-4 bg-indigo-50 rounded-xl">
-                                            <p className="text-2xl mb-2">🎯</p>
-                                            <p className="text-sm font-semibold text-slate-900">Better Matches</p>
-                                        </div>
-                                        <div className="p-4 bg-purple-50 rounded-xl">
-                                            <p className="text-2xl mb-2">💼</p>
-                                            <p className="text-sm font-semibold text-slate-900">More Opportunities</p>
-                                        </div>
-                                        <div className="p-4 bg-pink-50 rounded-xl">
-                                            <p className="text-2xl mb-2">⭐</p>
-                                            <p className="text-sm font-semibold text-slate-900">Stand Out</p>
-                                        </div>
-                                    </div>
-
-                                    <Link
-                                        href="/profile/edit"
-                                        className="inline-block px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-center rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg shadow-indigo-500/50 hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200"
-                                    >
-                                        <span className="flex items-center justify-center gap-2">
-                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                            </svg>
-                                            Complete Profile Now
-                                        </span>
-                                    </Link>
+                    </>
+                ) : (
+                    /* Profile Not Completed */
+                    <div className="max-w-2xl mx-auto pt-12">
+                        <div className="relative">
+                            <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl blur-2xl opacity-20"></div>
+                            <div className="relative bg-white/80 backdrop-blur-xl p-8 sm:p-12 rounded-3xl shadow-2xl border border-white/20 text-center space-y-6">
+                                <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-amber-400 to-orange-600 shadow-lg">
+                                    <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                    </svg>
                                 </div>
+                                <h1 className="text-3xl sm:text-4xl font-bold text-slate-900">
+                                    Welcome, {user.name}! 👋
+                                </h1>
+                                <p className="text-lg text-slate-600 max-w-md mx-auto">
+                                    Your profile is incomplete. Complete your profile to unlock personalized job recommendations and better opportunities!
+                                </p>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4">
+                                    <div className="p-4 bg-indigo-50 rounded-xl">
+                                        <p className="text-2xl mb-2">🎯</p>
+                                        <p className="text-sm font-semibold text-slate-900">Better Matches</p>
+                                    </div>
+                                    <div className="p-4 bg-purple-50 rounded-xl">
+                                        <p className="text-2xl mb-2">💼</p>
+                                        <p className="text-sm font-semibold text-slate-900">More Opportunities</p>
+                                    </div>
+                                    <div className="p-4 bg-pink-50 rounded-xl">
+                                        <p className="text-2xl mb-2">⭐</p>
+                                        <p className="text-sm font-semibold text-slate-900">Stand Out</p>
+                                    </div>
+                                </div>
+
+                                <Link
+                                    href="/profile/edit"
+                                    className="inline-block px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-center rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg shadow-indigo-500/50 hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200"
+                                >
+                                    <span className="flex items-center justify-center gap-2">
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        Complete Profile Now
+                                    </span>
+                                </Link>
                             </div>
                         </div>
-                    )}
-                </div>
+                    </div>
+                )}
+
             </div>
             <Footer />
         </>

@@ -2,13 +2,14 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { jwtDecode } from 'jwt-decode';
+import { getCurrentUser } from '@/actions/auth/auth-utils';
+import toast, { Toaster } from 'react-hot-toast';
+import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import { ArrowLeft, Building2, Briefcase, MapPin, Users, Check, FileText, XCircle, Eye } from 'lucide-react';
 import { getJobDetails } from '@/actions/jobs/getJobDetails';
 import { updateJobStatus } from '@/actions/jobs/updateJobStatus';
-import { Users, ArrowLeft, Eye, FileText, Loader2 } from 'lucide-react';
-import toast, { Toaster } from 'react-hot-toast';
 import { getRecruiters } from '@/actions/jobs/getRecruiters';
 import { updateJobRecruiters } from '@/actions/jobs/updateJobRecruiters';
 import { getJobApplicationStats } from '@/actions/applications/getJobApplicationStats';
@@ -27,11 +28,8 @@ export default function OrganizationJobDetailPage() {
     const [recruiters, setRecruiters] = useState([]);
     const [lockedRecruiters, setLockedRecruiters] = useState([]);
     const [isUpdatingRecruiters, setIsUpdatingRecruiters] = useState(false);
-
-    // Modal states
     const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
     const [pendingStatus, setPendingStatus] = useState(null);
-
     const [applicationStats, setApplicationStats] = useState({
         total: 0,
         shortlisted: 0,
@@ -43,37 +41,45 @@ export default function OrganizationJobDetailPage() {
     });
 
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        if (!token) {
-            router.push('/signin');
-            return;
-        }
+        const fetchUserAndCheckAuth = async () => {
+            try {
+                const currentUser = await getCurrentUser();
 
-        try {
-            const decoded = jwtDecode(token);
-            setUser(decoded);
-            fetchJobDetails(jobId, decoded);
-        } catch (error) {
-            console.error('Error decoding token:', error);
-            router.push('/signin');
-        }
+                if (!currentUser) {
+                    setUser(null);
+                    return;
+                }
+
+                setUser(currentUser);
+
+                // Check if user is authorized to view job details
+                if (!['HR', 'SeniorHR', 'OrgAdmin'].includes(currentUser.role)) {
+                    toast.error('You are not authorized to view job details.');
+                    return;
+                }
+
+                fetchJobDetails(jobId, currentUser);
+
+            } catch (error) {
+                console.error('Error getting current user:', error);
+                // User is not authenticated - we'll handle this in the UI
+                setUser(null);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchUserAndCheckAuth();
     }, [jobId, router]);
 
     const getAuthData = () => {
-        const token = localStorage.getItem('token');
-        if (!token) return null;
+        if (!user) return null;
 
-        try {
-            const decoded = jwtDecode(token);
-            return {
-                userId: decoded.id,
-                orgId: decoded.orgId,
-                userRole: decoded.role
-            };
-        } catch (error) {
-            console.error('Error decoding token:', error);
-            return null;
-        }
+        return {
+            userId: user.id,
+            orgId: user.orgId,
+            userRole: user.role
+        };
     };
 
     const fetchJobDetails = async (jobId, userData) => {
@@ -188,7 +194,6 @@ export default function OrganizationJobDetailPage() {
         setJob(prev => ({ ...prev, assigned_recruiters: finalSelected }));
     };
 
-    // Check if a recruiter is locked
     const isRecruiterLocked = (recruiterId) => {
         return lockedRecruiters.includes(recruiterId.toString());
     };
@@ -243,6 +248,87 @@ export default function OrganizationJobDetailPage() {
         }
     };
 
+    const UnauthenticatedComponent = () => (
+        <>
+            <Navbar />
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50">
+                <div className="max-w-md w-full">
+                    <div className="relative">
+                        <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl blur-2xl opacity-20"></div>
+                        <div className="relative bg-white/80 backdrop-blur-xl p-8 sm:p-10 rounded-3xl shadow-2xl border border-white/20 text-center space-y-6">
+                            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg">
+                                <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h1 className="text-3xl font-bold text-slate-900 mb-2">
+                                    Authentication Required
+                                </h1>
+                                <p className="text-slate-600">
+                                    You need to be signed in to view job details.
+                                </p>
+                            </div>
+                            <div className="flex flex-col gap-3">
+                                <button
+                                    onClick={() => router.push('/signin')}
+                                    className="w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all"
+                                >
+                                    Sign In
+                                </button>
+                                <button
+                                    onClick={() => router.push('/')}
+                                    className="w-full px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-all"
+                                >
+                                    Go Home
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <Footer />
+        </>
+    );
+
+    const UnauthorizedComponent = () => (
+        <>
+            <Navbar />
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50">
+                <div className="max-w-md w-full">
+                    <div className="relative">
+                        <div className="absolute inset-0 bg-gradient-to-r from-red-600 to-orange-600 rounded-3xl blur-2xl opacity-20"></div>
+                        <div className="relative bg-white/80 backdrop-blur-xl p-8 sm:p-10 rounded-3xl shadow-2xl border border-white/20 text-center space-y-6">
+                            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-red-500 to-orange-600 shadow-lg">
+                                <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h1 className="text-3xl font-bold text-slate-900 mb-2">
+                                    Access Denied
+                                </h1>
+                                <p className="text-slate-600">
+                                    Only <strong>HR</strong>, <strong>SeniorHR</strong>, and <strong>OrgAdmin</strong> can view job details.
+                                </p>
+                            </div>
+                            <div className="pt-2">
+                                <button
+                                    onClick={() => router.push('/dashboard')}
+                                    className="cursor-pointer w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all"
+                                >
+                                    Go to Dashboard
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <Footer />
+        </>
+    );
+
+
     if (isLoading) {
         return (
             <>
@@ -254,6 +340,15 @@ export default function OrganizationJobDetailPage() {
             </>
         );
     }
+
+    if (!user) {
+        return <UnauthenticatedComponent />;
+    }
+
+    if (user && !['HR', 'SeniorHR', 'OrgAdmin'].includes(user.role)) {
+        return <UnauthorizedComponent />;
+    }
+
 
     if (!job) {
         return (
@@ -283,106 +378,135 @@ export default function OrganizationJobDetailPage() {
         <>
             <Toaster />
             <Navbar />
-            <div className="min-h-screen bg-slate-50 py-8">
-                <div className="max-w-6xl mx-auto px-4">
-                    {/* Header */}
-                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6">
-                        <div className="flex justify-between items-start">
-                            <div className="flex-1">
-                                <div className="flex items-start justify-between">
-                                    <div>
-                                        <h1 className="text-3xl font-bold text-slate-900">{job.title}</h1>
-                                        <p className="text-slate-600 mt-2">{job.department} • {job.location}</p>
-                                        <div className="flex gap-2 mt-3">
-                                            <span className={`px-3 py-1 rounded-full text-sm font-medium ${job.status === 'Active' ? 'bg-green-100 text-green-800' :
-                                                job.status === 'Draft' ? 'bg-yellow-100 text-yellow-800' :
-                                                    'bg-red-100 text-red-800'
-                                                }`}>
-                                                {job.status}
-                                            </span>
-                                            <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
-                                                {job.job_type}
-                                            </span>
-                                            <span className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm font-medium">
-                                                {job.work_mode}
-                                            </span>
-                                        </div>
-                                    </div>
+            <div className="min-h-screen bg-slate-50 ">
 
-                                    {/* Action Buttons */}
-                                    <div className="flex gap-2">
-                                        <button
-                                            onClick={() => router.push(`/organization/jobs/${jobId}/applications`)}
-                                            className="flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-lg hover:bg-indigo-700 hover:text-white cursor-pointer"
-                                        >
-                                            <Eye className="w-4 h-4" />
-                                            View Applications
-                                        </button>
-                                        <button
-                                            onClick={() => router.push('/organization/jobs')}
-                                            className="flex items-center gap-2 px-4 py-2 border border-slate-300 rounded-lg hover:bg-indigo-700 hover:text-white cursor-pointer "
-                                        >
-                                            <ArrowLeft className="w-4 h-4" />
-                                            Back to Jobs
-                                        </button>
+                {/* Header - Matching Application Details Style */}
+                <div className="bg-white border-b border-gray-200 shadow-sm relative overflow-hidden mb-4">
+                    <div className="absolute inset-0 bg-gradient-to-r from-blue-50 to-indigo-50 opacity-50"></div>
+                    <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                        <div className="flex items-center gap-4 mb-4">
+                            <Link
+                                href="/organization/jobs"
+                                className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-all duration-200 font-medium group"
+                            >
+                                <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+                                Back to Jobs
+                            </Link>
+                        </div>
+
+                        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                            <div className="flex-1">
+                                <div className="flex items-center gap-3 mb-3">
+                                    <div className="p-2 bg-indigo-100 rounded-lg shadow-sm">
+                                        <Building2 className="w-6 h-6 text-indigo-600" />
                                     </div>
+                                    <span className="text-gray-700 font-semibold text-lg bg-white px-3 py-1 rounded-full border">
+                                        {job.department || 'Job Details'}
+                                    </span>
                                 </div>
 
-                                {/* Management Info */}
+                                <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+                                    {job.title}
+                                </h1>
+
+                                <div className="flex flex-wrap items-center gap-4 text-gray-600">
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <MapPin className="w-4 h-4" />
+                                        <span className="text-sm font-medium">{job.location}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <Briefcase className="w-4 h-4" />
+                                        <span className="text-sm font-medium">{job.job_type} • {job.work_mode}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <Users className="w-4 h-4" />
+                                        <span className="text-sm font-medium">{job.experience_level} Level</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col gap-3">
+                                <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 ${job.status === 'Active' ? 'border-green-200 bg-green-50 text-green-700' :
+                                    job.status === 'Draft' ? 'border-yellow-200 bg-yellow-50 text-yellow-700' :
+                                        'border-red-200 bg-red-50 text-red-700'
+                                    } shadow-sm`}>
+                                    {job.status === 'Active' && <Check className="w-4 h-4" />}
+                                    {job.status === 'Draft' && <FileText className="w-4 h-4" />}
+                                    {job.status === 'Closed' && <XCircle className="w-4 h-4" />}
+                                    <span className="font-semibold capitalize text-sm">{job.status}</span>
+                                </div>
                                 {canManageJob && (
-                                    <div className="mt-4 p-4 bg-indigo-50 border border-indigo-200 rounded-lg">
-                                        <div className="flex items-center justify-between">
-                                            <div>
-                                                <p className="text-sm text-indigo-800 font-medium">
-                                                    {isJobOwner && 'You created this job. '}
-                                                    {isAuthorizedRecruiter && !isJobOwner && 'You are assigned as recruiter'}
-                                                    {user?.role === 'OrgAdmin' && 'You have admin access'}
-                                                </p>
-                                                <p className="text-xs text-indigo-600 mt-1">
-                                                    {isJobClosed
-                                                        ? 'This job is closed and no longer accepting new applications'
-                                                        : 'You can manage applications and update job status'
-                                                    }
-                                                </p>
-                                            </div>
-                                            {!isJobClosed && (
-                                                <div className="flex gap-2">
-                                                    {job.status !== 'Draft' && (
-                                                        <button
-                                                            onClick={() => openStatusModal('Draft')}
-                                                            disabled={updatingStatus}
-                                                            className="flex items-center gap-2 px-4 py-2 bg-yellow-600 text-white cursor-pointer rounded-lg hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                        >
-                                                            Move to Draft
-                                                        </button>
-                                                    )}
-                                                    {job.status !== 'Closed' && (
-                                                        <button
-                                                            onClick={() => openStatusModal('Closed')}
-                                                            disabled={updatingStatus}
-                                                            className="flex items-center cursor-pointer gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                        >
-                                                            Close Job
-                                                        </button>
-                                                    )}
-                                                    {job.status !== 'Active' && (
-                                                        <button
-                                                            onClick={() => openStatusModal('Active')}
-                                                            disabled={updatingStatus}
-                                                            className="flex items-center gap-2 cursor-pointer px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                        >
-                                                            Activate Job
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
+                                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-blue-200 bg-blue-50 text-blue-700 shadow-sm">
+                                        <Users className="w-4 h-4" />
+                                        <span className="font-semibold text-sm">
+                                            {isJobOwner ? 'Job Owner' : isAuthorizedRecruiter ? 'Assigned Recruiter' : 'Admin Access'}
+                                        </span>
                                     </div>
                                 )}
                             </div>
                         </div>
-                    </div>
 
+                        {/* Quick Actions */}
+                        <div className="flex flex-wrap gap-3 mt-6 pt-6 border-t border-gray-200 flex-col sm:flex-row">
+                            <button
+                                onClick={() => router.push(`/organization/jobs/${jobId}/applications`)}
+                                className="cursor-pointer flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-lg hover:shadow-xl"
+                            >
+                                <Eye className="w-4 h-4" />
+                                View Applications ({applicationStats.total})
+                            </button>
+
+                            {/* Status Management Buttons */}
+                            {canManageJob && !isJobClosed && (
+                                <div className="flex flex-wrap gap-2 flex-col sm:flex-row">
+                                    {job.status !== 'Draft' && (
+                                        <button
+                                            onClick={() => openStatusModal('Draft')}
+                                            disabled={updatingStatus}
+                                            className="cursor-pointer flex items-center justify-center gap-2 px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-all duration-200 font-medium shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            <FileText className="w-4 h-4" />
+                                            Move to Draft
+                                        </button>
+                                    )}
+                                    {job.status !== 'Closed' && (
+                                        <button
+                                            onClick={() => openStatusModal('Closed')}
+                                            disabled={updatingStatus}
+                                            className="cursor-pointer flex items-center justify-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all duration-200 font-medium shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            <XCircle className="w-4 h-4" />
+                                            Close Job
+                                        </button>
+                                    )}
+                                    {job.status !== 'Active' && (
+                                        <button
+                                            onClick={() => openStatusModal('Active')}
+                                            disabled={updatingStatus}
+                                            className="cursor-pointer flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all duration-200 font-medium shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            <Check className="w-4 h-4" />
+                                            Activate Job
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
+                            {isJobClosed && canManageJob && (
+                                <button
+                                    onClick={() => openStatusModal('Active')}
+                                    disabled={updatingStatus}
+                                    className="cursor-pointer flex items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all duration-200 font-medium shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <Check className="w-4 h-4" />
+                                    Reopen Job
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="max-w-6xl mx-auto px-4">
                     {/* Quick Stats */}
                     {canManageJob && (
                         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">

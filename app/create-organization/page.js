@@ -5,9 +5,10 @@ import { createOrganization } from '@/actions/organization/create-organization';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
-import { jwtDecode } from 'jwt-decode';
 import toast, { Toaster } from 'react-hot-toast';
 import { Building2, UserPlus, Loader2, Mail, Info } from 'lucide-react';
+import Link from 'next/link';
+import { getCurrentUser } from '@/actions/auth/auth-utils';
 
 export default function OrgSignupPage() {
     const router = useRouter();
@@ -24,33 +25,36 @@ export default function OrgSignupPage() {
     });
 
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        if (token) {
+        const checkUserAndRedirect = async () => {
             try {
-                const decoded = jwtDecode(token);
-                // Only allow user with generic 'user' role to create an organization
-                if (decoded.id && decoded.role === 'user') {
-                    setUser(decoded);
-                    // Autofill email (disabled in form)
-                    setFormData(prev => ({ ...prev, adminEmail: decoded.email }));
-                } else if (decoded.id && decoded.role !== 'user') {
-                    // User is already an Admin or OrgAdmin, redirect to Dashboard
-                    toast.error(`You are already signed in as ${decoded.role}.`);
-                    router.push('/dashboard');
-                } else {
+                const currentUser = await getCurrentUser();
+
+                if (!currentUser) {
                     toast.error('Please login or sign up to continue. Redirecting to sign-in...');
                     setTimeout(() => router.push('/signin'), 3000);
+                    return;
                 }
-            } catch (err) {
-                console.error('Invalid token:', err);
-                localStorage.removeItem('token');
-                router.push('/signin');
+
+                // Only allow user with generic 'user' role to create an organization
+                if (currentUser.role === 'User') {
+                    setUser(currentUser);
+                    // Autofill email (disabled in form)
+                    setFormData(prev => ({ ...prev, adminEmail: currentUser.email }));
+                } else if (currentUser.role !== 'User') {
+                    // User is already an Admin or OrgAdmin, redirect to Dashboard
+                    toast.error(`You are already signed in as ${currentUser.role}.`);
+                    setTimeout(() => router.push('/dashboard'), 3000);
+                }
+            } catch (error) {
+                console.error('Error fetching user:', error);
+                toast.error('Please login or sign up to continue. Redirecting to sign-in...');
+                setTimeout(() => router.push('/signin'), 3000);
+            } finally {
+                setIsLoading(false);
             }
-        } else {
-            toast.error('Please login or sign up to continue. Redirecting to sign-in...');
-            setTimeout(() => router.push('/signin'), 3000);
-        }
-        setIsLoading(false);
+        };
+
+        checkUserAndRedirect();
     }, [router]);
 
     const handleInputChange = (e) => {
@@ -79,9 +83,6 @@ export default function OrgSignupPage() {
             const data = await createOrganization(payload);
 
             if (data.success) {
-                // Update JWT token in local storage
-                localStorage.setItem('token', data.token);
-
                 toast.success('Organization created! Redirecting to your Admin Dashboard. 🚀');
                 router.push('/dashboard/organization');
             } else {
@@ -97,17 +98,77 @@ export default function OrgSignupPage() {
         }
     };
 
-    if (isLoading || !user) {
+    // Add these components before the loading check:
+
+    // Unauthenticated Component
+    const UnauthenticatedComponent = () => (
+        <>
+            <Navbar />
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50">
+                <div className="max-w-md w-full">
+                    <div className="relative">
+                        <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl blur-2xl opacity-20"></div>
+                        <div className="relative bg-white/80 backdrop-blur-xl p-8 sm:p-10 rounded-3xl shadow-2xl border border-white/20 text-center space-y-6">
+                            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg">
+                                <Building2 className="w-10 h-10 text-white" />
+                            </div>
+                            <div>
+                                <h1 className="text-3xl font-bold text-slate-900 mb-2">
+                                    Authentication Required
+                                </h1>
+                                <p className="text-slate-600">
+                                    You need to be signed in to create an organization.
+                                </p>
+                            </div>
+                            <div className="flex flex-col gap-3">
+                                <button
+                                    onClick={() => router.push('/signin')}
+                                    className="w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all"
+                                >
+                                    Sign In
+                                </button>
+                                <button
+                                    onClick={() => router.push('/')}
+                                    className="w-full px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-all"
+                                >
+                                    Go Home
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <Footer />
+        </>
+    );
+
+    if (isLoading) {
         return (
             <>
                 <Navbar />
                 <Toaster />
-                <div className="min-h-screen flex items-center justify-center text-slate-600">
-                    <Loader2 className="animate-spin w-6 h-6 mr-3 text-indigo-600" /> Checking user status...
+                <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50 flex items-center justify-center p-8">
+                    <div className="text-center">
+                        <div className="w-16 h-16 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500 rounded-lg mx-auto mb-6 flex items-center justify-center">
+                            <Building2 className="w-8 h-8 text-white" />
+                        </div>
+                        <h3 className="text-xl font-semibold text-slate-800 mb-2">
+                            Checking Access
+                        </h3>
+                        <p className="text-slate-600 mb-6">
+                            Verifying your account permissions...
+                        </p>
+                        <Loader2 className="animate-spin w-8 h-8 text-indigo-600 mx-auto" />
+                    </div>
                 </div>
                 <Footer />
             </>
         );
+    }
+
+    // Add this check after the loading check:
+    if (!user && !isLoading) {
+        return <UnauthenticatedComponent />;
     }
 
     return (
@@ -257,12 +318,12 @@ export default function OrgSignupPage() {
 
                             <div className="mt-6 pt-6 border-t border-slate-200 text-center">
                                 <p className="text-sm text-slate-600">
-                                    <a
-                                        onClick={() => router.push('/dashboard')}
+                                    <Link
+                                        href="/dashboard"
                                         className="font-semibold text-indigo-600 hover:text-indigo-700 underline cursor-pointer"
                                     >
                                         Go to your user dashboard
-                                    </a> if you only need candidate access.
+                                    </Link> if you only need candidate access.
                                 </p>
                             </div>
 

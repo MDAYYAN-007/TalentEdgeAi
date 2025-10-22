@@ -6,11 +6,11 @@ import { parseResume } from '@/actions/resume/parseResume';
 import { getProfile } from '@/actions/profile/getProfile';
 import { saveProfile } from '@/actions/profile/saveProfile';
 import { useState, useEffect, useCallback } from "react";
-import { jwtDecode } from "jwt-decode";
 import Link from "next/link";
-import { Plus, X, Trash2, Loader2, Github, BookOpen, Briefcase, User, Phone, Linkedin, Globe, GraduationCap, Zap, UploadCloud } from 'lucide-react';
+import { ArrowLeft, Eye, Plus, X, Trash2, Loader2, Github, BookOpen, Briefcase, User, Phone, Linkedin, Globe, GraduationCap, Zap, UploadCloud } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import { useRouter } from "next/navigation";
+import { getCurrentUser } from "@/actions/auth/auth-utils";
 
 export default function ProfileEditPages() {
 
@@ -38,23 +38,26 @@ export default function ProfileEditPages() {
 
     useEffect(() => {
         const fetchProfile = async () => {
-            const token = localStorage.getItem("token");
-            if (!token) return;
 
             try {
-                const decoded = jwtDecode(token);
-                setUser(decoded);
-                console.log("Decoded JWT:", decoded);
+                const currentUser = await getCurrentUser();
 
-                // Set email & fullName initially
+                if (!currentUser) {
+                    console.log('No authenticated user found');
+                    return;
+                }
+
+                setUser(currentUser);
+                console.log("Authenticated User:", currentUser);
+
                 setFormData(prev => ({
                     ...prev,
-                    name: decoded.name || prev.name,
-                    email: decoded.email || prev.email,
+                    name: currentUser.name || prev.name,
+                    email: currentUser.email || prev.email,
                 }));
 
                 // Fetch profile using server action
-                const data = await getProfile(decoded.id);
+                const data = await getProfile(currentUser.id);
 
                 if (data.success && data.profile) {
                     const profile = data.profile;
@@ -273,7 +276,6 @@ export default function ProfileEditPages() {
             const result = await saveProfile(data);
 
             if (result.success) {
-                localStorage.setItem("token", result.token);
                 router.push('/profile');
                 toast.success("Profile saved successfully!");
             } else {
@@ -303,11 +305,74 @@ export default function ProfileEditPages() {
             <Navbar />
             <div className="bg-slate-50 min-h-[calc(100vh-120px)] pb-12">
 
-                {/* Dedicated Page Header */}
-                <div className="bg-gradient-to-r from-indigo-700 to-purple-700 py-10 px-4 sm:px-6 lg:px-8 shadow-xl">
-                    <div className="max-w-7xl mx-auto">
-                        <h1 className="text-4xl font-extrabold text-white">Edit Your Profile ✏️</h1>
-                        <p className="mt-2 text-xl text-indigo-200">Manage your resume, experience, education, and skills.</p>
+                <div className="bg-white border-b border-gray-200 shadow-sm relative overflow-hidden mb-4">
+                    <div className="absolute inset-0 bg-gradient-to-r from-blue-50 to-indigo-50 opacity-50"></div>
+                    <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                        <div className="flex items-center gap-4 mb-4">
+                            <Link
+                                href="/dashboard"
+                                className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-all duration-200 font-medium group cursor-pointer"
+                            >
+                                <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+                                Back to Dashboard
+                            </Link>
+                        </div>
+
+                        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                            <div className="flex-1">
+                                <div className="flex items-center gap-3 mb-3">
+                                    <div className="p-2 bg-indigo-100 rounded-lg shadow-sm">
+                                        <User className="w-6 h-6 text-indigo-600" />
+                                    </div>
+                                    <span className="text-gray-700 font-semibold text-lg bg-white px-3 py-1 rounded-full border">
+                                        Edit Profile
+                                    </span>
+                                </div>
+
+                                <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+                                    Update Your Profile ✏️
+                                </h1>
+
+                                <div className="flex flex-wrap items-center gap-4 text-gray-600">
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <UploadCloud className="w-4 h-4" />
+                                        <span className="text-sm font-medium">AI Resume Parsing</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <Zap className="w-4 h-4" />
+                                        <span className="text-sm font-medium">{formData.skills.length} Skills</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <Briefcase className="w-4 h-4" />
+                                        <span className="text-sm font-medium">{formData.experiences.length} Experiences</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <GraduationCap className="w-4 h-4" />
+                                        <span className="text-sm font-medium">{formData.education.length} Education</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                        <BookOpen className="w-4 h-4" />
+                                        <span className="text-sm font-medium">{formData.projects.length} Projects</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col gap-3">
+                                <Link
+                                    href="/profile"
+                                    className="cursor-pointer flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all duration-200 font-medium shadow-lg hover:shadow-xl"
+                                >
+                                    <Eye className="w-5 h-5" />
+                                    View Profile
+                                </Link>
+                                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-green-200 bg-green-50 text-green-700 shadow-sm">
+                                    <User className="w-4 h-4" />
+                                    <span className="font-semibold text-sm">
+                                        {user?.name || 'Your Profile'}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

@@ -3,10 +3,11 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { jwtDecode } from 'jwt-decode';
+import { getCurrentUser } from '@/actions/auth/auth-utils';
+import Link from 'next/link';
 import {
     Plus, Trash2, Save, ArrowLeft, Clock, FileText,
-    Zap, Type, Hash, Star, Settings, Eye, Users, UserCheck, Menu, X
+    Zap, Type, Hash, Star, Settings, Eye, Users, UserCheck, Menu, X, Loader2
 } from 'lucide-react';
 import { createTest } from '@/actions/tests/createTest';
 import toast, { Toaster } from 'react-hot-toast';
@@ -17,7 +18,7 @@ import { getRecruiters } from '@/actions/jobs/getRecruiters';
 export default function CreateTestPage() {
     const router = useRouter();
     const [user, setUser] = useState(null);
-    const [isLoading, setIsLoading] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
     const [activeStep, setActiveStep] = useState(1);
     const [activeQuestionTab, setActiveQuestionTab] = useState('mcq_single');
     const [organizationUsers, setOrganizationUsers] = useState([]);
@@ -38,34 +39,39 @@ export default function CreateTestPage() {
 
     // Authentication
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        if (!token) {
-            router.push('/signin');
-            return;
-        }
+        const fetchUserAndCheckAuth = async () => {
+            try {
+                const currentUser = await getCurrentUser();
 
-        try {
-            const decoded = jwtDecode(token);
-            const userData = {
-                name: decoded.name || 'User',
-                email: decoded.email,
-                role: decoded.role || 'User',
-                id: decoded.id,
-                orgId: decoded.orgId
-            };
-            setUser(userData);
+                console.log('Current User:', currentUser);
+                if (!currentUser) {
+                    setUser(null);
+                    setIsLoading(false);
+                    return;
+                }
 
-            if (decoded.role && !['HR', 'SeniorHR', 'OrgAdmin'].includes(decoded.role)) {
-                router.push('/dashboard');
-                return;
+                setUser(currentUser);
+
+                // Check if user is authorized to create tests
+                if (!['HR', 'SeniorHR', 'OrgAdmin'].includes(currentUser.role)) {
+                    toast.error('You are not authorized to create tests. Redirecting...');
+                    setTimeout(() => router.push('/dashboard'), 3000);
+                    return;
+                }
+
+                // Fetch organization users for access control
+                if (currentUser.orgId) {
+                    fetchOrganizationUsers(currentUser.orgId, currentUser.id, currentUser.role);
+                }
+
+            } catch (error) {
+                console.error('Error getting current user:', error);
+                // User is not authenticated - we'll handle this in the UI
+                setUser(null);
             }
+        };
 
-            fetchOrganizationUsers(decoded.orgId, decoded.id, decoded.role);
-        } catch (err) {
-            console.error('Invalid token', err);
-            localStorage.removeItem('token');
-            router.push('/signin');
-        }
+        fetchUserAndCheckAuth();
     }, [router]);
 
     const fetchOrganizationUsers = async (orgId, currentUserId, currentUserRole) => {
@@ -89,6 +95,7 @@ export default function CreateTestPage() {
             setOrganizationUsers([]);
         } finally {
             setIsLoadingUsers(false);
+            setIsLoading(false);
         }
     };
 
@@ -291,11 +298,63 @@ export default function CreateTestPage() {
         }
     };
 
+    if (isLoading) {
+        return (
+            <>
+                <Navbar />
+                <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                    <div className="text-center p-8 bg-white rounded-xl shadow-lg">
+                        <Loader2 className="w-10 h-10 animate-spin text-indigo-600 mx-auto mb-4" />
+                        <p className="text-lg font-medium text-gray-700">Loading your page...</p>
+                    </div>
+                </div>
+                <Footer />
+            </>
+        );
+    }
+
     if (!user) {
         return (
-            <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
-                <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-indigo-600"></div>
-            </div>
+            <>
+                <Navbar />
+                <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50">
+                    <div className="max-w-md w-full">
+                        <div className="relative">
+                            <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-3xl blur-2xl opacity-20"></div>
+                            <div className="relative bg-white/80 backdrop-blur-xl p-8 sm:p-10 rounded-3xl shadow-2xl border border-white/20 text-center space-y-6">
+                                <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg">
+                                    <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h1 className="text-3xl font-bold text-slate-900 mb-2">
+                                        Authentication Required
+                                    </h1>
+                                    <p className="text-slate-600">
+                                        You need to be signed in to create tests.
+                                    </p>
+                                </div>
+                                <div className="flex flex-col gap-3">
+                                    <button
+                                        onClick={() => router.push('/signin')}
+                                        className="cursor-pointer w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all"
+                                    >
+                                        Sign In
+                                    </button>
+                                    <button
+                                        onClick={() => router.push('/')}
+                                        className="cursor-pointer w-full px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-all"
+                                    >
+                                        Go Home
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <Footer />
+            </>
         );
     }
 
@@ -303,30 +362,68 @@ export default function CreateTestPage() {
         <>
             <Navbar />
             <Toaster />
-            <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 py-6 md:py-8">
-                <div className="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8">
-                    {/* Header */}
-                    <div className="mb-6 md:mb-8">
-                        <button
-                            onClick={() => router.back()}
-                            className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-4 md:mb-6 transition-colors"
-                        >
-                            <ArrowLeft className="w-5 h-5" />
-                            <span className="text-sm md:text-base">Back</span>
-                        </button>
+            <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+                <div className="">
+                    <div className="bg-white border-b border-gray-200 shadow-sm relative overflow-hidden mb-3">
+                        <div className="absolute inset-0 bg-gradient-to-r from-blue-50 to-indigo-50 opacity-50"></div>
+                        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                            <div className="flex items-center gap-4 mb-4">
+                                <Link
+                                    href="/organization/tests"
+                                    className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-all duration-200 font-medium group"
+                                >
+                                    <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+                                    Back to Tests
+                                </Link>
+                            </div>
 
-                        <div className="bg-white rounded-2xl p-4 md:p-6 shadow-lg border border-gray-200">
-                            <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-gray-900 mb-2 md:mb-4">
-                                Create New Test
-                            </h1>
-                            <p className="text-sm md:text-base text-gray-600">
-                                Build comprehensive assessments with multiple question types.
-                            </p>
+                            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                                <div className="flex-1">
+                                    <div className="flex items-center gap-3 mb-3">
+                                        <div className="p-2 bg-indigo-100 rounded-lg shadow-sm">
+                                            <FileText className="w-6 h-6 text-indigo-600" />
+                                        </div>
+                                        <span className="text-gray-700 font-semibold text-lg bg-white px-3 py-1 rounded-full border">
+                                            Create New Test
+                                        </span>
+                                    </div>
+
+                                    <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-4">
+                                        Build Assessment
+                                    </h1>
+
+                                    <div className="flex flex-wrap items-center gap-4 text-gray-600">
+                                        <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                            <Clock className="w-4 h-4" />
+                                            <span className="text-sm font-medium">{testData.durationMinutes || 60} Minutes</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                            <Star className="w-4 h-4" />
+                                            <span className="text-sm font-medium">{testData.passingMarks || 60}% Passing</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm">
+                                            <Hash className="w-4 h-4" />
+                                            <span className="text-sm font-medium">{questions.length} Questions</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-col gap-3">
+                                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-blue-200 bg-blue-50 text-blue-700 shadow-sm">
+                                        <Settings className="w-4 h-4" />
+                                        <span className="font-semibold text-sm">Step {activeStep} of 4</span>
+                                    </div>
+                                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-green-200 bg-green-50 text-green-700 shadow-sm">
+                                        <FileText className="w-4 h-4" />
+                                        <span className="font-semibold text-sm">{totalMarks} Total Marks</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
                     {/* Progress Steps - Horizontal Scrollable on Mobile */}
-                    <div className="bg-white rounded-2xl p-4 md:p-6 shadow-lg border border-gray-200 mb-6 md:mb-8 overflow-x-auto">
+                    <div className="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8 py-2 bg-white rounded-2xl shadow-lg border border-gray-200 mb-6 md:mb-8 overflow-x-auto">
                         <div className="flex gap-3 md:gap-4 justify-between items-center min-w-max md:min-w-0">
                             {[
                                 { number: 1, label: 'Test Details', icon: Settings },
@@ -368,10 +465,10 @@ export default function CreateTestPage() {
                         </div>
                     </div>
 
-                    <form onSubmit={handleSubmit}>
+                    <form onSubmit={handleSubmit} className="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8  md:p-6">
                         {/* Step 1: Test Details */}
                         {activeStep === 1 && (
-                            <div className="bg-white rounded-2xl p-4 md:p-8 shadow-lg border border-gray-200">
+                            <div className=" bg-white rounded-2xl p-4 md:p-8 shadow-lg border border-gray-200">
                                 <h2 className="text-xl md:text-3xl font-bold text-gray-900 mb-6 flex items-center gap-3">
                                     <Settings className="w-6 md:w-8 h-6 md:h-8 text-indigo-600 flex-shrink-0" />
                                     <span>Test Basic Information</span>

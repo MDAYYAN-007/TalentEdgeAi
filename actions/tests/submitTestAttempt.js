@@ -17,6 +17,8 @@ export async function submitTestAttempt(attemptId, finalScore = null, isPassed =
             RETURNING test_id, application_id
         `;
 
+        console.log('Submitting test attempt:', attemptId, finalScore, isPassed);
+
         const result = await query(sql, [attemptId, finalScore, finalScore, isPassed]);
 
         if (result.rows.length > 0) {

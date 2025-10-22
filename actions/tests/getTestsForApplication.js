@@ -11,7 +11,7 @@ export async function getTestsForApplication(applicationId) {
                 t.description as test_description,
                 t.duration_minutes,
                 t.total_marks,
-                t.passing_marks,
+                t.passing_percentage,
                 t.instructions,
                 t.is_active as test_active,
                 CONCAT(u.first_name, ' ', u.last_name) as assigned_by_name,
