@@ -8,7 +8,7 @@ import { createJob } from '@/actions/jobs/createJob';
 import { getRecruiters } from '@/actions/jobs/getRecruiters';
 import toast, { Toaster } from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Save, Eye, List, Home, Plus, FileText } from 'lucide-react';
+import { ArrowLeft, Loader2, Save, Eye, List, Home, Plus, FileText } from 'lucide-react';
 
 export default function CreateJobPage() {
     const router = useRouter();
@@ -225,12 +225,16 @@ export default function CreateJobPage() {
 
     if (isLoading) {
         return (
-            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                <div className="text-center p-8 bg-white rounded-xl shadow-lg">
-                    <Loader2 className="w-10 h-10 animate-spin text-indigo-600 mx-auto mb-4" />
-                    <p className="text-lg font-medium text-gray-700">Loading your page...</p>
+            <>
+                <Navbar />
+                <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                    <div className="text-center p-8 bg-white rounded-xl shadow-lg">
+                        <Loader2 className="w-10 h-10 animate-spin text-indigo-600 mx-auto mb-4" />
+                        <p className="text-lg font-medium text-gray-700">Loading your page...</p>
+                    </div>
                 </div>
-            </div>
+                <Footer />
+            </>
         );
     }
 

@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import toast, { Toaster } from 'react-hot-toast';
-import { Building2, UserPlus, Loader2, Mail, Info } from 'lucide-react';
+import { Building2, UserPlus, Loader2, Mail, Info, Crown, Users, Briefcase } from 'lucide-react';
 import Link from 'next/link';
 import { getCurrentUser } from '@/actions/auth/auth-utils';
 
@@ -30,25 +30,28 @@ export default function OrgSignupPage() {
                 const currentUser = await getCurrentUser();
 
                 if (!currentUser) {
-                    toast.error('Please login or sign up to continue. Redirecting to sign-in...');
-                    setTimeout(() => router.push('/signin'), 3000);
+                    // User is not authenticated - we'll handle this in the UI
+                    setUser(null);
+                    setIsLoading(false);
                     return;
                 }
 
-                // Only allow user with generic 'user' role to create an organization
+                setUser(currentUser);
+
+                // If user is already an OrgAdmin, we'll show a different component
+                if (currentUser.role === 'OrgAdmin') {
+                    setIsLoading(false);
+                    return;
+                }
+
+                // For regular users, continue with the form
                 if (currentUser.role === 'User') {
-                    setUser(currentUser);
                     // Autofill email (disabled in form)
                     setFormData(prev => ({ ...prev, adminEmail: currentUser.email }));
-                } else if (currentUser.role !== 'User') {
-                    // User is already an Admin or OrgAdmin, redirect to Dashboard
-                    toast.error(`You are already signed in as ${currentUser.role}.`);
-                    setTimeout(() => router.push('/dashboard'), 3000);
                 }
             } catch (error) {
                 console.error('Error fetching user:', error);
-                toast.error('Please login or sign up to continue. Redirecting to sign-in...');
-                setTimeout(() => router.push('/signin'), 3000);
+                setUser(null);
             } finally {
                 setIsLoading(false);
             }
@@ -98,8 +101,6 @@ export default function OrgSignupPage() {
         }
     };
 
-    // Add these components before the loading check:
-
     // Unauthenticated Component
     const UnauthenticatedComponent = () => (
         <>
@@ -123,16 +124,135 @@ export default function OrgSignupPage() {
                             <div className="flex flex-col gap-3">
                                 <button
                                     onClick={() => router.push('/signin')}
-                                    className="w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all"
+                                    className="cursor-pointer w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all"
                                 >
                                     Sign In
                                 </button>
                                 <button
                                     onClick={() => router.push('/')}
-                                    className="w-full px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-all"
+                                    className="cursor-pointer w-full px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-all"
                                 >
                                     Go Home
                                 </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <Footer />
+        </>
+    );
+
+    // OrgAdmin Component - User is already an organization admin
+    const OrgAdminComponent = () => (
+        <>
+            <Navbar />
+            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-indigo-50/30 to-slate-50 p-4">
+                <div className="max-w-2xl w-full">
+                    <div className="relative">
+                        <div className="absolute inset-0 bg-gradient-to-r from-green-600 to-emerald-600 rounded-3xl blur-2xl opacity-20"></div>
+                        <div className="relative bg-white/80 backdrop-blur-xl p-8 sm:p-12 rounded-3xl shadow-2xl border border-white/20 text-center space-y-8">
+                            {/* Success Icon */}
+                            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 shadow-lg mx-auto">
+                                <Crown className="w-10 h-10 text-white" />
+                            </div>
+
+                            {/* Welcome Message */}
+                            <div className="space-y-4">
+                                <div className="inline-flex items-center px-4 py-2 rounded-full bg-green-100/80 backdrop-blur-sm border border-green-200/50 mx-auto">
+                                    <span className="text-sm font-semibold text-green-700">Organization Admin</span>
+                                </div>
+
+                                <h1 className="text-3xl sm:text-4xl font-bold text-slate-900">
+                                    Welcome Back, Admin!
+                                </h1>
+
+                                <p className="text-lg text-slate-600 leading-relaxed">
+                                    You're already an <span className="font-semibold text-green-600">OrgAdmin</span> for your organization.
+                                    Access your admin dashboard to manage jobs, recruiters, and applications.
+                                </p>
+
+                                {user?.orgName && (
+                                    <p className="text-sm text-slate-500">
+                                        Organization: <span className="font-medium text-slate-700">{user.orgName}</span>
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Quick Stats */}
+                            <div className="flex w-full gap-2 md:flex-row flex-col justify-center">
+                                <div className="bg-blue-50 p-4 rounded-xl border border-blue-200 min-w-48">
+                                    <Briefcase className="w-8 h-8 text-blue-600 mx-auto mb-2" />
+                                    <div className="text-2xl font-bold text-blue-700">Jobs</div>
+                                    <div className="text-sm text-blue-600">Manage Postings</div>
+                                </div>
+                                <div className="bg-purple-50 p-4 rounded-xl border border-purple-200 min-w-48">
+                                    <Users className="w-8 h-8 text-purple-600 mx-auto mb-2" />
+                                    <div className="text-2xl font-bold text-purple-700">Team</div>
+                                    <div className="text-sm text-purple-600">Manage Recruiters</div>
+                                </div>
+                                <div className="bg-orange-50 p-4 rounded-xl border border-orange-200 min-w-48">
+                                    <Building2 className="w-8 h-8 text-orange-600 mx-auto mb-2" />
+                                    <div className="text-2xl font-bold text-orange-700">Org</div>
+                                    <div className="text-sm text-orange-600">Settings</div>
+                                </div>
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                                <button
+                                    onClick={() => router.push('/dashboard/organization')}
+                                    className="cursor-pointer flex items-center justify-center gap-2 px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-bold hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transition-all duration-200 hover:-translate-y-0.5"
+                                >
+                                    <Briefcase className="w-5 h-5" />
+                                    Admin Dashboard
+                                </button>
+
+                                <button
+                                    onClick={() => router.push('/organization/jobs')}
+                                    className="cursor-pointer flex items-center justify-center gap-2 px-8 py-4 border-2 border-slate-300 text-slate-700 rounded-xl font-bold hover:bg-slate-50 hover:border-slate-400 transition-all duration-200"
+                                >
+                                    <Users className="w-5 h-5" />
+                                    View Jobs
+                                </button>
+                            </div>
+
+                            {/* Additional Options */}
+                            <div className="pt-6 border-t border-slate-200/50">
+                                <div className="space-y-3">
+                                    <p className="text-sm text-slate-500">Quick Links:</p>
+                                    <div className="flex flex-wrap justify-center gap-3">
+                                        <button
+                                            onClick={() => router.push("/organization/create-job")}
+                                            className="cursor-pointer px-4 py-2 text-sm text-indigo-600 hover:text-indigo-700 font-medium transition-all duration-200 bg-indigo-50/50 hover:bg-indigo-100 rounded-lg border border-indigo-100 hover:border-indigo-200 hover:shadow-sm"
+                                        >
+                                            Create Job
+                                        </button>
+                                        <button
+                                            onClick={() => router.push("/organization/tests")}
+                                            className="cursor-pointer px-4 py-2 text-sm text-indigo-600 hover:text-indigo-700 font-medium transition-all duration-200 bg-indigo-50/50 hover:bg-indigo-100 rounded-lg border border-indigo-100 hover:border-indigo-200 hover:shadow-sm"
+                                        >
+                                            Manage Tests
+                                        </button>
+                                        <button
+                                            onClick={() => router.push("/organization/applications")}
+                                            className="cursor-pointer px-4 py-2 text-sm text-indigo-600 hover:text-indigo-700 font-medium transition-all duration-200 bg-indigo-50/50 hover:bg-indigo-100 rounded-lg border border-indigo-100 hover:border-indigo-200 hover:shadow-sm"
+                                        >
+                                            Applications
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Security Note */}
+                            <div className="bg-blue-50/50 border border-blue-200/50 rounded-xl p-4">
+                                <div className="flex items-center gap-3 justify-center">
+                                    <Crown className="w-5 h-5 text-blue-600 flex-shrink-0" />
+                                    <div>
+                                        <p className="text-sm font-medium text-blue-900">Admin Privileges Active</p>
+                                        <p className="text-xs text-blue-700">You have full access to manage your organization's hiring process</p>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -166,9 +286,13 @@ export default function OrgSignupPage() {
         );
     }
 
-    // Add this check after the loading check:
-    if (!user && !isLoading) {
+    // Show different components based on user role
+    if (!user) {
         return <UnauthenticatedComponent />;
+    }
+
+    if (user.role === 'OrgAdmin') {
+        return <OrgAdminComponent />;
     }
 
     return (
@@ -187,7 +311,7 @@ export default function OrgSignupPage() {
                                 <Building2 className="w-10 h-10 text-indigo-600 mb-4" />
                                 <h1 className="text-3xl font-bold text-slate-900">Establish Your HRMS</h1>
                                 <p className="text-slate-600 mt-2">
-                                    Register your company to gain **OrgAdmin** access and begin managing your workforce.
+                                    Register your company to gain <strong>OrgAdmin</strong> access and begin managing your workforce.
                                 </p>
                             </div>
 
@@ -196,14 +320,13 @@ export default function OrgSignupPage() {
                                 <div>
                                     <p className="text-sm font-semibold text-yellow-800">Admin Email Locked</p>
                                     <p className="text-sm text-yellow-700">
-                                        The Organization Admin email is automatically set to: **{user.email}**.
+                                        The Organization Admin email is automatically set to: <strong>{user.email}</strong>.
                                     </p>
                                     <p className="text-xs text-yellow-600 mt-1">
                                         To use a different email, please logout first and create a new user account.
                                     </p>
                                 </div>
                             </div>
-
 
                             <form onSubmit={handleSubmit} className="space-y-6">
                                 {/* Basic Info Section */}
