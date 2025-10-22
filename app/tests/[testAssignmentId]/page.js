@@ -17,7 +17,7 @@ import {
     XCircle, Play, Pause, Flag, ChevronLeft, ChevronRight,
     Save, Send, Zap, Type, Code, Eye, EyeOff, Fullscreen,
     Minimize, User, Shield, Camera, Monitor, Smartphone,
-    AlertTriangle, Info, Lock, Unlock, Copy, Mouse
+    AlertTriangle, Info, Lock, Unlock, Copy, Mouse,Loader2
 } from 'lucide-react';
 import toast, { Toaster } from 'react-hot-toast';
 import Link from 'next/link';
