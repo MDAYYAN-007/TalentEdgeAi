@@ -160,7 +160,6 @@ export async function getUserDashboardData(userId, userRole) {
             JOIN organizations o ON j.org_id = o.id
             WHERE j.status = 'Active'
             ORDER BY j.created_at DESC
-            LIMIT 8
         `);
 
         recommendedJobs = jobsResult.rows.map(row => ({

@@ -37,6 +37,7 @@ export default function DashboardPage() {
 
                 if (data.success) {
                     setDashboardData(data.data);
+                    console.log(data.data);
                 } else {
                     toast.error('Failed to load dashboard data');
                 }
