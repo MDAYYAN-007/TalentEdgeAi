@@ -47,6 +47,7 @@ export default function OrganizationJobDetailPage() {
 
                 if (!currentUser) {
                     setUser(null);
+                    setIsLoading(false);
                     return;
                 }
 
@@ -55,6 +56,7 @@ export default function OrganizationJobDetailPage() {
                 // Check if user is authorized to view job details
                 if (!['HR', 'SeniorHR', 'OrgAdmin'].includes(currentUser.role)) {
                     toast.error('You are not authorized to view job details.');
+                    setIsLoading(false);
                     return;
                 }
 
@@ -62,9 +64,7 @@ export default function OrganizationJobDetailPage() {
 
             } catch (error) {
                 console.error('Error getting current user:', error);
-                // User is not authenticated - we'll handle this in the UI
                 setUser(null);
-            } finally {
                 setIsLoading(false);
             }
         };
