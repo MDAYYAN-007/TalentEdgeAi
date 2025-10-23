@@ -228,7 +228,7 @@ export default function Home() {
                       className="group inline-flex items-center justify-center px-8 py-4 text-lg font-bold text-white border-2 border-white/50 rounded-2xl backdrop-blur-sm hover:bg-white/10 hover:border-white transform hover:scale-105 transition-all duration-300 hover:-translate-y-1"
                     >
                       <AiOutlineDashboard className="w-6 h-6 mr-3" />
-                      Access Dashboard
+                      Sign In 
                     </Link>
                   </>
                 )}
